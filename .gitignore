@@ -1,9 +1,9 @@
-# Locally downloaded Go toolchain (spike only; delete once Go is installed properly)
+# Locally downloaded Go toolchain, so the repo builds without a system install
 .toolchain/
 
-# Binaries
-/envsafe
-/envsafe.exe
+# Built binaries
+/gk
+/gk.exe
 *.exe
 /dist/
 
@@ -20,8 +20,7 @@ identities/
 .tmp-*
 *.tmp
 
-# Local config and editor/OS noise
-.envsafe/config.json
+# Editor and OS noise
 .DS_Store
 Thumbs.db
 
