@@ -1,86 +1,69 @@
-# Gatekeeper
+<p align="center">
+  <img src="assets/logo.svg" width="128" height="128" alt="Gatekeeper">
+</p>
 
-Gatekeeper is a local-first command-line vault for project environment variables.
-It gives you one encrypted source of truth that can move between your computers
-without repeatedly recreating `.env` files.
+<h1 align="center">Gatekeeper</h1>
 
-> **Status:** early implementation. `gk init` works; the rest of the vault
-> workflow is not built, there is no release, and this has not been externally
-> security audited.
+<p align="center">
+  One encrypted source of truth for your project environment variables —<br>
+  on every computer you own, with no service, no subscription, and no plaintext lying around.
+</p>
+
+> **Pre-release.** The v0.1 command set is feature-complete and tested, but there
+> is no release, and this has not been externally security audited. Read
+> [Security model](#security-model) before trusting it with anything that matters.
+
+---
 
 ## The problem
 
-Development secrets tend to end up scattered across ignored `.env` files,
-shell history, notes, chat messages, and old computers. Moving to another
-computer means finding and re-entering every API key, database URL, and token.
+Your secrets are scattered across ignored `.env` files, shell history, notes,
+chat messages, and an old laptop. Moving to a new machine means hunting down
+every API key, database URL, and token and typing it in again.
 
-Gatekeeper is intended to replace that workflow with:
+Gatekeeper replaces that with:
 
 ```text
-one encrypted vault -> sync ciphertext -> unlock on an approved device
+one encrypted vault  ->  sync the ciphertext  ->  unlock on each machine
 ```
 
-It is not intended to become an enterprise secrets platform. The first version
-is a personal developer tool with no hosted service and no subscription.
+It is a personal developer tool. It is not an enterprise secrets platform, and
+there is no hosted service anywhere in it.
 
-## Product principles
+## Quick start
 
-- **Local first.** Secret encryption and decryption happen on your computer.
-- **Encrypted at rest and in transit.** Sync providers only receive ciphertext.
-- **One executable.** Users should not need Node, Python, Docker, SOPS, or an
-  always-running server.
-- **No permanent `.env` by default.** Prefer injecting variables into a child
-  process with `gk run`.
-- **Explicit plaintext operations.** Showing or exporting values should be
-  obvious and difficult to do accidentally.
-- **Established cryptography.** Use the Go implementation of `age`; do not
-  invent encryption algorithms or protocols.
-- **Recoverable, not magical.** A user must retain at least one authorized
-  device key or an offline recovery key.
-- **Small before clever.** CLI first; synchronization helpers, MCP, and a UI
-  come only after the vault workflow is reliable.
+```sh
+# 1. Create the vault. Prints an offline recovery key exactly once.
+gk init --vault ~/gatekeeper-vault --recovery-out ~/safe/recovery.key
 
-## Proposed experience
-
-Initialize a vault. This sets a passphrase, writes your identity outside the
-vault, and prints an offline recovery key exactly once:
-
-```bash
-gk init --vault ~/gatekeeper-vault
-```
-
-Add values. `set` prompts without echo, keeps the value out of your shell history
-and out of the process arguments, and creates the profile on first use:
-
-```bash
+# 2. Put a secret in. Prompts without echo; never touches your shell history.
 gk set website-dev DATABASE_URL
-gk set website-dev OPENAI_API_KEY
-```
 
-Run a program without creating a plaintext `.env` file:
+# 3. Or bring in a whole .env at once.
+gk import website-dev .env.local
 
-```bash
+# 4. See what you have, without seeing any values.
+gk list website-dev
+
+# 5. Run something with those variables injected. No .env file is created.
 gk run website-dev -- npm run dev
 ```
 
-Inspect the vault without revealing values:
+`gk init` records the vault as this machine's default, so no later command needs
+`--vault`.
 
-```bash
-gk list website-dev
+## Install
+
+Requires **Go 1.26 or newer**.
+
+```sh
+git clone <this repository> gatekeeper
+cd gatekeeper
+go build -o gk ./cmd/gk
 ```
 
-Bring secrets in from, or write them out to, an ordinary dotenv file:
-
-```bash
-gk import website-dev .env.local
-gk export website-dev --output .env
-```
-
-`export` is intentionally separate from ordinary listing and execution, warns
-first, and refuses to write to standard output without an explicit dangerous flag.
-
-The `show` and `export` commands are intentionally separate from ordinary
-listing and execution.
+Then put `gk` somewhere on your `PATH`. To run the test suite, the linters, and
+the cross-compiles exactly as CI would, see [Development](#development).
 
 ## Commands
 
@@ -99,78 +82,219 @@ listing and execution.
 | `gk passwd` | Change the passphrase, re-encrypting the identity in place |
 | `gk doctor` | Check the vault and identity; `--pre-commit` refuses to commit secrets |
 
-**Still deferred, deliberately:** `gk profile create`, `gk profile list`,
-`gk unset`, `gk show`, and recipient management (`gk device …`) — see §11 of
-[`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
+Every command accepts `gk --help` for the full text.
 
-### Marking a key as exposed
+### Global flags
 
-Gatekeeper cannot detect a leaked key — it has no network access, and it cannot
-know what you pasted into a chat. So you tell it, and it remembers:
+| Flag | Meaning |
+| --- | --- |
+| `--vault DIR` | Vault directory. Defaults to `$GK_VAULT`, then the configured default vault |
+| `--identity PATH` | Open the vault with this raw age private key instead of the local identity — the recovery path |
+
+### Unlocking
+
+Commands that need to read secrets will prompt for your passphrase with echo
+disabled. Two alternatives, both intended for scripts and automation:
+
+| Flag | Where it works |
+| --- | --- |
+| `--passphrase-file PATH` | Any command that needs the passphrase |
+| `--value-file PATH` | `gk set`, instead of prompting for the value |
+
+Both refuse a file that is readable by other local users, and neither will read a
+passphrase or a value from an argument or an environment variable — an argument
+lands in your shell history and in the process list, which is the exact problem
+this tool exists to solve.
+
+### `gk init`
+
+Creates two key pairs: one your machines use, and one recovery key meant to be
+stored offline. Every profile is encrypted to both, so losing every computer is
+survivable as long as the recovery key survives.
+
+The machine identity is encrypted at rest under your passphrase, so a stolen or
+copied key file is useless without it. The recovery key is deliberately **not**
+encrypted — it belongs on paper or removable media, and it is also the way back in
+if you forget the passphrase. Because it is printed in the clear, `gk init`
+insists on a destination it can actually be delivered to, and refuses to run when
+stdout is not a terminal.
+
+The passphrase must be at least 12 characters. Under 20 you get a warning, not a
+refusal — blocking a short passphrase pushes people toward writing it down, which
+is worse.
+
+### `gk set` and `gk list`
+
+`set` prompts without echo, creates the profile on first use, and never accepts
+the value as an argument. `list` names profiles, or the variables in one, and
+**never** shows a value — the type it prints has no field for one, so it cannot
+leak by accident.
 
 ```sh
-gk flag website-dev OPENAI_API_KEY --note "pasted into a chat"
+gk list                                  # profiles
+gk list website-dev                      # variable names in one profile
+```
+
+### `gk import` and `gk export`
+
+`import` is the bulk entry path: one command, one passphrase, every variable. The
+file is parsed as data and **never evaluated** — no variable expansion, no command
+substitution, no shell — so a file you did not write cannot run code by being
+imported. Use `-` as the file to read standard input.
+
+A variable that already exists with a different value stops the import, unless
+you pass `--overwrite`.
+
+`export` is the one operation that deliberately produces plaintext. Nothing else
+Gatekeeper does writes a secret to disk in the clear, and once that file exists,
+its lifecycle is yours rather than Gatekeeper's. It warns, it writes `0600`, it
+refuses to overwrite an existing file without `--force`, and it will not write
+anywhere at all until you name either `--output FILE` or an explicit `--stdout`.
+
+```sh
+gk export website-dev --output .env
+```
+
+**Delete it when you are done.**
+
+### `gk run`
+
+Runs a command with the profile's variables added to its environment, so no
+plaintext `.env` is ever created. Everything after `--` is passed through
+untouched, and no shell is involved, so spaces, quotes, and metacharacters keep
+their literal meaning.
+
+```sh
+gk run website-dev -- npm run dev
+```
+
+The profile wins over your current environment for every variable it defines;
+every other variable passes through unchanged. Once the command starts, its exit
+status is yours — `gk` exits with the child's code. Gatekeeper's own exit codes
+apply only when it fails before starting anything.
+
+On Windows, tools like `npm` and `yarn` are batch files, which cannot be started
+directly. Those are run through `cmd.exe`, and Gatekeeper says so on standard
+error rather than doing it silently.
+
+### `gk flag`
+
+Gatekeeper cannot detect that a key was exposed — it has no network access, and it
+cannot know what you pasted into a chat. So you tell it, and it remembers:
+
+```sh
+gk flag website-dev OPENAI_API_KEY --note "pasted into #eng-secrets"
 gk list website-dev
 #   DATABASE_URL
-#   OPENAI_API_KEY   [flagged: pasted into a chat (2026-09-17)]
+#   OPENAI_API_KEY   [flagged: pasted into #eng-secrets (2026-09-17)]
 #   STRIPE_KEY
 ```
 
-Replacing the value **clears the flag by itself**, because a new value is the
-rotation. Re-entering the *same* value does not — otherwise retyping a secret
-would silence the warning without anything having been fixed. If you decide a flag
-never mattered, `gk unflag` clears it.
+A flagged key shows up in `gk list` and in `gk doctor` until you replace the
+value. **Replacing the value clears the flag by itself**, because a new value is
+the rotation. Re-entering the *same* value does not — otherwise retyping a secret
+would silence the warning without anything having been fixed. `gk unflag` clears a
+flag you decided never mattered.
 
 The flag and its note live inside the encrypted payload, so they travel with the
-vault and a note like "pasted into #eng-secrets" never reaches the repository.
+vault and a note like `pasted into #eng-secrets` never reaches the repository.
+
+Flagging does not rotate anything at the provider. That is still your job.
+
+### `gk passwd`
+
+Re-encrypts the local identity under a new passphrase. The current passphrase is
+required, so this cannot lock you out of a vault you can already open. The new key
+file is written and swapped in atomically, so an interruption leaves the old
+passphrase working rather than leaving you with none.
+
+This does **not** re-encrypt any profiles. They are encrypted to the identity, not
+to the passphrase, so the vault is untouched and your other machines are
+unaffected. The offline recovery key has no passphrase to change.
+
+### `gk doctor`
+
+With no flags it checks the vault, the identity, and whether secrets are about to
+be committed. It does **not** need your passphrase, so it still works when the
+vault will not open and you do not yet know why.
+
+| Check | What it means |
+| --- | --- |
+| vault selected | A vault directory was found |
+| vault readable | `manifest.json` and `devices.json` parse |
+| recipients readable | Every device recipient plus the recovery recipient parses |
+| identity present | A local identity exists for this vault |
+| identity protected | It is encrypted at rest, and where it should be |
+| no key material in the vault | Nothing in the vault directory looks like a secret |
+| vault has ignore rules | `.gitignore` is present |
+| no flagged variables | Skipped unless you unlock; needs `--passphrase-file` |
+
+### `gk sync`
+
+Three ordinary git commands run in the vault directory, in order: `git pull`,
+then `git add` for the vault's own changed files with a commit if anything
+changed, then `git push`.
+
+Staging is limited to the paths the vault owns, so it is **not** `git add -A` —
+anything else you happen to keep in that directory is left alone rather than swept
+into a commit. A generated commit message contains profile names at most, never
+variable names or values. If the pull cannot be merged it stops and explains what
+to do rather than guessing.
+
+This is the only command that touches the network, and only when you run it.
 
 ## How it works
 
-Gatekeeper uses the Go [`age`](https://pkg.go.dev/filippo.io/age) library for file
-encryption. Each computer gets its own age identity:
+Gatekeeper uses the Go [`age`](https://pkg.go.dev/filippo.io/age) library. Each
+machine has an age identity:
 
 ```text
-recipient/public key -> may encrypt data for that device
-identity/private key -> may decrypt data on that device
+recipient (public key)  ->  may encrypt data for that machine
+identity (private key)  ->  may decrypt data on that machine
 ```
 
-Each profile is stored as a separate encrypted file. A profile is encrypted to
-all authorized device recipients plus an offline recovery recipient. Adding or
-removing a device causes the current profile files to be decrypted locally and
-re-encrypted to the new recipient set.
+Each profile is a separate encrypted file, encrypted to every authorized device
+recipient **plus** the offline recovery recipient. Profiles are not encrypted to
+your passphrase; they are encrypted to a random key, and only that key file is
+protected by the passphrase. Practically, this means changing your passphrase is
+instant and does not touch a single profile.
 
-The encrypted directory can be synchronized with Git, Syncthing, a USB drive,
-or another file synchronization system. Git is the first supported workflow,
-but it is transport rather than a security dependency.
+The vault is a directory of ciphertext. Git, Syncthing, a USB stick, or anything
+else that copies files *is* the sync — Gatekeeper is not in the loop, so the
+transport is not a security decision.
 
-## Proposed vault layout
+## Where things live
+
+The vault — everything here is safe to commit, because it is all ciphertext or
+non-secret metadata:
 
 ```text
-.gatekeeper/
-├── config.json                # non-secret local configuration
-├── devices.json               # device names and public recipients
+~/gatekeeper-vault/
+├── manifest.json            # vault id, name, format version
+├── devices.json             # device names and public recipients
 ├── profiles/
-│   ├── website-dev.age        # encrypted profile
+│   ├── website-dev.age      # one encrypted file per profile
 │   └── website-production.age
-└── .gitignore                 # excludes local identity and transient files
-
-~/.config/gk/
-└── identities/
-    └── <vault-id>.key         # private device identity; never synchronized
+└── .gitignore               # excludes local identity and transient files
 ```
 
-Profile names and device names are metadata in the initial design. Values and
-variable names inside each profile are encrypted. Hiding profile names can be
-considered later if it proves useful.
+On each machine — **never** synchronized, and the only thing you copy by hand:
 
-## Moving to another computer
+```text
+~/.config/gatekeeper/            # Linux, macOS
+%LOCALAPPDATA%\gatekeeper\       # Windows
+├── config.json                  # which vault is the default here
+└── identities/
+    └── <vault-id>.key           # passphrase-encrypted private identity
+```
 
-**There is no sync feature, and nothing to configure inside Gatekeeper.** The
-vault is a directory. Whatever you already use to copy a directory — Git,
-Syncthing, `scp`, a USB stick — *is* the sync. Only ciphertext travels, so the
-transport is not a security decision and Gatekeeper is not in the loop.
+Profile names and device names are metadata. Values and variable names inside each
+profile are encrypted.
 
-On the new machine:
+## Using it on a second computer
+
+The vault is a directory. Whatever you already use to copy a directory is the
+sync. On the new machine:
 
 ```sh
 # 1. Get the vault directory there, however you like
@@ -191,24 +315,14 @@ gk run website-dev -- npm run dev
 
 Step 3 is the only thing that never travels through Git or any sync tool, and it
 happens once per machine. After that, every new secret arrives with the directory.
-(`gk init` records the default vault for you, so step 2 is only needed on a machine
-that did not create the vault.)
 
 ### Choosing a transport
 
 | Transport | Notes |
 | --- | --- |
-| **Git** | `git init`, commit, push. Installed everywhere already, and gives version history. Remember the repository is public to anyone you grant access — which is fine, because it is ciphertext. |
-| **A file-sync tool** (Syncthing, a NAS, a cloud drive) | Simplest to live with: it just copies, and there is no history to worry about. Two caveats — point it at the vault directory only, and if the tool keeps its own version history, remember deleted secrets may live there. |
-| **A USB stick or `scp`** | Perfectly reasonable for occasional moves, and the least you can possibly depend on. |
-
-Whichever you pick, Gatekeeper is not in the loop, so there is nothing to
-configure inside it:
-
-```sh
-cd ~/gatekeeper-vault
-git add -A && git commit -m "Update profiles" && git push
-```
+| **Git** | `git init`, commit, push. Already installed everywhere, and gives you history. The repository is readable by anyone you grant access — which is fine, because it is ciphertext. |
+| **A file-sync tool** (Syncthing, a NAS, a cloud drive) | Simplest to live with: it just copies. Two caveats — point it at the vault directory only, and if it keeps its own version history, remember deleted secrets may live there. |
+| **A USB stick or `scp`** | Perfectly reasonable for occasional moves, and the least you can depend on. |
 
 ### Installing the guardrail
 
@@ -220,19 +334,15 @@ printf '#!/bin/sh\nexec gk doctor --pre-commit\n' > .git/hooks/pre-commit
 chmod +x .git/hooks/pre-commit
 ```
 
-It scans the directory for dotenv files, key files, and private key material, and
-exits non-zero if it finds any. `gk doctor` on its own checks the vault, the
-identity and its permissions, and needs no passphrase — so it still works when the
-vault will not open.
+It scans for dotenv files (`.env`, `.env.*`), key and certificate files
+(`.key`, `.p12`, `.pfx`), SSH private keys (`id_rsa`, `id_ed25519`, `id_ecdsa`,
+`id_dsa`), and raw age private key material, and exits non-zero if it finds any.
 
 ### Getting back in
 
-If every machine is lost, or the passphrase is forgotten, the offline recovery key
-printed by `gk init` restores access. It is a separate key and it is deliberately
-*not* passphrase-protected — which is why `gk init` insists on a destination it can
-actually be delivered to, and refuses to run when there is none.
-
-Point `--identity` at it and the local identity is bypassed entirely:
+If every machine is lost, or you forget your passphrase, the offline recovery key
+from `gk init` restores access. Point `--identity` at it and the local identity is
+bypassed entirely:
 
 ```sh
 gk list website-dev --identity ~/safe/recovery.key
@@ -240,53 +350,129 @@ gk export website-dev --identity ~/safe/recovery.key --output restored.env
 ```
 
 That is also the answer to "I forgot my passphrase": the recovery key is the way
-back in, and from there you can re-import into a fresh vault with a new passphrase.
+back in, and from there you can import into a fresh vault with a new passphrase.
 
-Per-machine identities and recipient management are deliberately deferred: the
-recipient list already supports several keys, so adding them later is additive.
+Per-machine identities and recipient management are deliberately deferred. The
+recipient list already supports several keys, so adding them later is additive
+rather than a migration.
 
-## Security boundaries
+## Security model
 
-Gatekeeper protects secrets stored in the synchronized vault. It cannot protect a
-secret after an authorized process receives it.
+**What this protects.** The vault at rest and in transit. Profiles are encrypted
+with `age` before they are ever written, so a synced repository, a backup, or a
+stolen laptop disk yields ciphertext. Your passphrase protects the identity file,
+so copying that file alone is not enough. This is what replaces full-disk
+encryption for the narrow case of these secrets.
 
-In particular:
+**What it cannot protect.** A secret, once delivered to a program, is that
+program's. In particular:
 
-- A program launched by `gk run` can read its environment.
-- A malicious dependency or modified project can print or transmit variables.
-- A sufficiently privileged local attacker may inspect process memory or the
-  child process environment.
-- `show` exposes a value to terminal scrollback and potentially recording
-  software.
-- `export` creates a plaintext file whose lifecycle Gatekeeper cannot control.
-- Removing a device does not revoke its ability to decrypt old Git revisions
+- A program launched by `gk run` can read its own environment.
+- A malicious dependency or a modified project can print or transmit variables.
+- A sufficiently privileged local attacker can inspect process memory or a child
+  process's environment.
+- `gk export` creates a plaintext file whose lifecycle Gatekeeper cannot control.
+- Removing a device does not revoke its ability to decrypt **old Git revisions**
   that were encrypted for it. Compromised credentials must be rotated.
+- Malware running as you defeats all of this. Operational mistakes are the
+  dominant real-world risk, which is why listing never shows values, why
+  `export` is loud, and why the guardrail exists.
 
-MCP integration therefore will not provide a generic `get_secret` tool. A later
-MCP version should expose approved profiles and configured tasks, with clear
-warnings that an agent able to modify executed code may still cause that code
-to reveal its environment.
+**Plaintext writes are exactly two places:** `gk export`, and the recovery key's
+named destination at `gk init`. Nothing else in the tool writes a secret to disk in
+the clear.
 
-## Technology choices
+**On Windows**, permissions are weaker and the tool says so rather than pretending
+otherwise. `os.Chmod` only toggles the read-only attribute and does not stop
+another local account from reading a file. Gatekeeper therefore requires those
+files to live under your per-user profile, which Windows already ACLs to you, and
+treats anything else as unsafe. It does not write a DACL. A machine where another
+local account can read your profile directory is a machine where your key is
+readable.
 
-- **Go** for a fast, cross-platform, single-binary application.
-- **Cobra** for command structure, help, and shell completion.
-- **`filippo.io/age`** for encryption and device recipients.
-- **JSON inside encrypted profiles** for a versioned, inspectable data model.
-- **Git as an optional sync adapter**, not as the source of truth for security.
-- **Go's standard testing package** for unit and integration tests.
-- **GoReleaser** when binary distribution becomes necessary.
-- **Official MCP Go SDK** only after the core CLI is stable.
+## Exit codes
 
-There is deliberately no database, web frontend, hosted backend, or account
-system in the first version.
+| Code | Meaning |
+| --- | --- |
+| 0 | Success |
+| 1 | Failure — an unclassified problem |
+| 2 | Usage — a bad flag, a bad name, or no vault selected |
+| 3 | Not found — a missing profile, variable, or file you named |
+| 4 | Locked — no usable identity, or a passphrase that does not unlock it |
+| 5 | Conflict — a revision or synchronization conflict |
+| 6 | Integrity — an invalid or corrupted encrypted payload |
+| 7 | Permission — an unsafe identity or secret file |
+| 8 | External — a sync or child-process startup failure |
 
-## Non-goals for version one
+Classification is by sentinel, so wrapping an error does not change its code. Once
+`gk run` has started a child process, the child's exit code is passed through
+verbatim and these codes no longer apply.
+
+## Troubleshooting
+
+**"unsafe file permissions"** — A file you named with `--passphrase-file`,
+`--value-file`, or `--identity` is readable by other local users. The error names
+the file and the fix: `chmod 600 <file>`.
+
+**"the two passphrases do not match"** — `gk init` and `gk passwd` ask twice when
+creating a new passphrase. Nothing has been written at that point; just run it
+again.
+
+**"not a Gatekeeper vault"** — The directory has no readable `manifest.json`. If
+you are on a new machine, check that step 1 of
+[Using it on a second computer](#using-it-on-a-second-computer) actually
+completed, and that `--vault` points at the vault directory rather than its
+parent.
+
+**The vault will not open and you do not know why** — Run `gk doctor`. It needs no
+passphrase, so it still works in exactly the situation where you need it.
+
+**A merge conflict in `gk sync`** — Ciphertext cannot be merged, so Gatekeeper
+stops instead of guessing. It prints the recovery steps. Because each profile is
+its own file, a conflict is normally narrowed to one profile.
+
+## Development
+
+```sh
+go test ./...                                  # the suite
+go test -race ./...                            # the suite, with the race detector
+go test ./internal/vault/ -run Fuzz            # fuzz seed corpus
+go test ./internal/vault/ -fuzz FuzzRoundTrip -fuzztime 30s
+```
+
+The suite is deliberately slow: `scrypt` cost is real, and weakening the KDF to
+speed up tests would weaken the thing being tested.
+
+Before proposing a change:
+
+```sh
+gofmt -s -l ./cmd ./internal      # must print nothing
+go vet ./...                      # also: GOOS=windows, GOOS=darwin
+staticcheck ./...
+govulncheck ./...
+GOOS=windows go build ./cmd/gk    # cross-compiles
+GOOS=darwin  go build ./cmd/gk
+```
+
+Dependencies are kept deliberately small — `filippo.io/age`, `spf13/cobra`,
+`golang.org/x/sys`, `golang.org/x/term`, and nothing else. For a tool that holds
+keys, every dependency is code running next to your decrypted vault.
+
+## Documentation
+
+| Document | What it is |
+| --- | --- |
+| [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) | **Authoritative.** The security model, the build order, the acceptance criteria, and what is deliberately not being built |
+| [`docs/STATUS.md`](docs/STATUS.md) | The short version: where the work stands and what comes next |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The deeper technical design. Its security invariants are requirements, not plans |
+| [`docs/CODE-STANDARDS.md`](docs/CODE-STANDARDS.md) | Naming, boundaries, error handling, testing, and the commit format |
+
+## Not in version one
 
 - Enterprise teams, roles, and organization policies
 - A hosted Gatekeeper cloud
 - Browser password autofill
-- Password generation and general password-manager replacement
+- Password generation, or replacing a general password manager
 - Automatic credential rotation
 - Mobile applications
 - Cross-device real-time synchronization
@@ -294,23 +480,9 @@ system in the first version.
 - Arbitrary secret retrieval through MCP
 - Protection from a compromised operating system
 
-## Development status
-
-There is no release, but the v0.1 command set is feature-complete: create a vault
-with an offline recovery identity, store and retrieve secrets, run a command with
-a profile injected, import and export in bulk, sync between machines, change the
-passphrase, flag an exposed key, and open a vault with only the recovery identity.
-[`docs/STATUS.md`](docs/STATUS.md) records the precise state of each command.
-
-**Start with [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md)** — it is
-the plan, and it is authoritative. It carries the security model, the build order,
-the acceptance criteria, and what is deliberately not being built.
-
-[`docs/STATUS.md`](docs/STATUS.md) is the short version: where the work stands and
-what comes next. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) is the deeper
-technical design, and its security invariants are requirements rather than plans.
-[`docs/CODE-STANDARDS.md`](docs/CODE-STANDARDS.md) covers naming, boundaries,
-error handling, testing, and the commit format.
+Also deliberately deferred: `gk profile create`, `gk profile list`, `gk unset`,
+`gk show`, and recipient management (`gk device …`). See §11 of the
+[implementation plan](docs/IMPLEMENTATION_PLAN.md).
 
 ## License
 
