@@ -25,6 +25,12 @@ var ErrNotDecryptable = errors.New("ciphertext is not decryptable by this identi
 // error is dropped rather than wrapped because it echoes the key material.
 var ErrBadIdentity = errors.New("identity is not a valid age identity")
 
+// ErrPayloadTooLarge reports a decrypted payload beyond the configured limit.
+//
+// Encrypted input is unbounded by nature, so the limit is what stops a hostile
+// file from exhausting memory. Exceeding it is a failure, not a truncation.
+var ErrPayloadTooLarge = errors.New("decrypted payload is larger than the limit")
+
 // DefaultMaxPlaintext bounds how much a profile may expand to. A profile is
 // kilobytes at most; the limit exists so a hostile file cannot exhaust memory.
 const DefaultMaxPlaintext = 1 << 20 // 1 MiB
@@ -78,9 +84,20 @@ func (a Age) Decrypt(src io.Reader, identities []age.Identity, readPlaintext fun
 	if max <= 0 {
 		max = DefaultMaxPlaintext
 	}
-	// max+1 rather than max, so the caller can detect "too large" instead of
-	// silently reading a truncated profile.
-	return readPlaintext(io.LimitReader(r, max+1))
+
+	// A LimitedReader rather than a bare LimitReader, because the limit has to be
+	// *enforced* and not merely applied. A LimitReader would hand the caller a
+	// silently truncated payload, which then fails somewhere else with a message
+	// about the wrong thing — an unterminated JSON object, say — and no hint that
+	// the real problem was size.
+	limited := &io.LimitedReader{R: r, N: max + 1}
+	if err := readPlaintext(limited); err != nil {
+		return err
+	}
+	if limited.N <= 0 {
+		return fmt.Errorf("%w: more than %d bytes", ErrPayloadTooLarge, max)
+	}
+	return nil
 }
 
 // GenerateIdentity returns a fresh X25519 private key and its public recipient.

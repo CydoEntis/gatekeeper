@@ -50,19 +50,6 @@ func isTransientLock(err error) bool {
 // FlushFileBuffers on a directory handle is not equivalent.
 func SyncDir(dir string) error { return nil }
 
-// CheckIdentityPerms verifies the private key is in a per-user location.
-//
-// It deliberately does NOT check mode bits, because on Windows there are none:
-// os.Chmod only toggles the read-only attribute and does nothing to stop
-// another user on the machine from reading the file. A "0600" identity on
-// Windows can still be world-readable, so copying the POSIX check across would
-// be worse than having no check at all -- it would report safety that does not
-// exist.
-//
-// Real enforcement means writing a DACL (SetNamedSecurityInfo with inheritance
-// removed) via golang.org/x/sys/windows. This spike takes the cheap safe route
-// instead: require the key to live under the per-user profile, which Windows
-// already ACLs to the owning user. Explicit DACL hardening is a v0.1 task.
 // Per-user directories Windows already restricts to the owning user, which is
 // what makes them usable for a key without writing an explicit DACL.
 const (
@@ -70,6 +57,25 @@ const (
 	envAppData      = "APPDATA"
 )
 
+// CheckIdentityPerms verifies the private key is in a per-user location.
+//
+// It deliberately does NOT check mode bits, because on Windows there are none:
+// os.Chmod only toggles the read-only attribute and does nothing to stop another
+// user on the machine from reading the file. A "0600" identity on Windows can
+// still be world-readable, so copying the POSIX check across would be worse than
+// having no check at all -- it would report safety that does not exist.
+//
+// Real enforcement means writing a DACL (SetNamedSecurityInfo with inheritance
+// removed) via golang.org/x/sys/windows. That is deliberately not done: it is
+// fiddly, needs the key's SID rather than its path, and a mistake can lock the
+// user out of their own key. Requiring the key to live under the per-user profile
+// is the cheap safe route, because Windows already ACLs those directories to the
+// owning user.
+//
+// The gap is documented rather than closed, and it is worth stating plainly: a key
+// inside the profile is protected by that inherited ACL and by nothing more, so a
+// machine where another local account can read the profile directory is a machine
+// where the key is readable.
 func CheckIdentityPerms(path string) error {
 	return checkPerUserProfile(path, "identity")
 }

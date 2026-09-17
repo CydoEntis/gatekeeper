@@ -45,10 +45,12 @@ const (
 	gitIsInsideWorkTree = "--is-inside-work-tree"
 	gitStatus           = "status"
 	gitPorcelain        = "--porcelain"
+	gitNullTerminated   = "-z"
 	gitPull             = "pull"
 	gitNoRebase         = "--no-rebase"
 	gitAdd              = "add"
 	gitAll              = "-A"
+	gitPathsSeparator   = "--"
 	gitCommit           = "commit"
 	gitMessage          = "-m"
 	gitPush             = "push"
@@ -118,8 +120,8 @@ func (g Git) Sync(ctx context.Context, message string) (Result, error) {
 	if len(status) == 0 {
 		result.Steps = append(result.Steps, stepNoChanges)
 	} else {
-		if _, err := g.run(ctx, gitAdd, gitAll); err != nil {
-			return result, fmt.Errorf("staging vault changes: %w", err)
+		if err := g.stageVault(ctx, status); err != nil {
+			return result, err
 		}
 		if message == "" {
 			message = commitMessage(result.Changed)
@@ -142,20 +144,86 @@ func (g Git) Sync(ctx context.Context, message string) (Result, error) {
 	return result, nil
 }
 
-// status returns git's porcelain status lines.
+// vaultOwnedPaths keeps only the paths a vault owns.
+//
+// A file sitting beside the vault is deliberately left alone: committing
+// something the user did not mean to publish is the exact mistake this tool
+// exists to prevent.
+func vaultOwnedPaths(status []string) []string {
+	var owned []string
+	for _, line := range status {
+		if path := statusPath(line); isVaultPath(path) {
+			owned = append(owned, path)
+		}
+	}
+	return owned
+}
+
+// isVaultPath reports whether a repository-relative path belongs to the vault.
+func isVaultPath(path string) bool {
+	if path == "" {
+		return false
+	}
+	if strings.HasPrefix(path, vault.ProfilesDir+"/") {
+		return true
+	}
+	switch path {
+	case vault.ManifestFile, vault.DevicesFile, vault.GitignoreFile:
+		return true
+	}
+	return false
+}
+
+// stageVault stages the vault's own changed paths, and nothing else.
+//
+// Staging is driven by what actually changed rather than by a fixed list of
+// paths, for two reasons. A pathspec matching nothing makes `git add` fail
+// outright — a vault whose `.gitignore` was never written would take the whole
+// sync down with it — and profile filenames are not known in advance.
+//
+// -A is kept, but scoped to those paths: it is what stages a *deleted* profile.
+// Plain `git add <path>` would leave the deletion pending, and the commit would
+// keep a secret the user believed they had removed.
+func (g Git) stageVault(ctx context.Context, status []string) error {
+	paths := vaultOwnedPaths(status)
+	if len(paths) == 0 {
+		return nil
+	}
+
+	args := append([]string{gitAdd, gitAll, gitPathsSeparator}, paths...)
+	if _, err := g.run(ctx, args...); err != nil {
+		return fmt.Errorf("staging vault changes: %w", err)
+	}
+	return nil
+}
+
+// status returns git's status records.
+//
+// -z rather than the newline form: it leaves paths unquoted and unescaped, so a
+// path containing a space survives parsing intact.
 func (g Git) status(ctx context.Context) ([]string, error) {
-	out, err := g.run(ctx, gitStatus, gitPorcelain)
+	out, err := g.run(ctx, gitStatus, gitPorcelain, gitNullTerminated)
 	if err != nil {
 		return nil, fmt.Errorf("reading vault status: %w", err)
 	}
 
 	var lines []string
-	for _, line := range strings.Split(out, "\n") {
+	for _, line := range strings.Split(out, "\x00") {
 		if strings.TrimSpace(line) != "" {
 			lines = append(lines, line)
 		}
 	}
 	return lines, nil
+}
+
+// statusPath extracts the path from one porcelain -z record.
+//
+// The format is fixed: two status characters, a space, then the path.
+func statusPath(line string) string {
+	if len(line) < 4 {
+		return ""
+	}
+	return line[3:]
 }
 
 func (g Git) run(ctx context.Context, args ...string) (string, error) {
@@ -170,7 +238,7 @@ func (g Git) run(ctx context.Context, args ...string) (string, error) {
 	return out.String(), err
 }
 
-// profileNames extracts profile names from porcelain status lines.
+// profileNames extracts profile names from status records.
 //
 // Only names, and only ones already visible as filenames in the repository — so
 // a commit message built from them reveals nothing that `git log --stat` would
@@ -180,11 +248,7 @@ func profileNames(status []string) []string {
 	var names []string
 
 	for _, line := range status {
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-		base := filepath.Base(fields[len(fields)-1])
+		base := filepath.Base(statusPath(line))
 		if !strings.HasSuffix(base, vault.ProfileFileExt) {
 			continue
 		}

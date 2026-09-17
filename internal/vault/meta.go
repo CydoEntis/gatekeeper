@@ -89,7 +89,7 @@ func WriteGitignore(dir string) error {
 }
 
 // ErrNotVault reports a directory that does not look like a vault.
-var ErrNotVault = errors.New("directory is not an Gatekeeper vault")
+var ErrNotVault = errors.New("directory is not a Gatekeeper vault")
 
 // ReadManifest loads and validates a vault's manifest.
 func ReadManifest(dir string) (Manifest, error) {
@@ -136,16 +136,23 @@ func ReadDevices(dir string) (Devices, error) {
 	return d, nil
 }
 
-// WriteManifest and WriteDevices persist metadata atomically, so a crash cannot
-// leave a vault with a half-written manifest.
+// WriteManifest persists the vault's plaintext metadata atomically, so a crash
+// cannot leave a vault with a half-written manifest.
 func WriteManifest(dir string, m Manifest) error {
 	return writeJSONAtomic(dir, ManifestFile, m)
 }
 
+// WriteDevices persists the recipient set atomically.
+//
+// The atomicity matters more here than anywhere else in the vault: a partially
+// written recipient list is a vault whose holders are ambiguous, and the next
+// write would encrypt to whatever survived.
 func WriteDevices(dir string, d Devices) error {
 	return writeJSONAtomic(dir, DevicesFile, d)
 }
 
+// writeJSONAtomic encodes v and installs it with a temp-file-and-rename, so the
+// destination is either the old file or the new one and never a mixture.
 func writeJSONAtomic(dir, name string, v any) error {
 	payload, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
@@ -181,9 +188,18 @@ func writeJSONAtomic(dir, name string, v any) error {
 	return platform.SyncDir(dir)
 }
 
-// strictUnmarshal rejects unknown fields and trailing content, matching the
-// decoding rules applied to encrypted profiles.
+// strictUnmarshal rejects unknown fields, duplicate keys, and trailing content.
+//
+// The duplicate-key check matters here for the same reason it matters for an
+// encrypted profile, and rather more: `devices.json` is what decides who can read
+// the vault, and encoding/json silently keeps the *last* of two identical keys. A
+// file that says two different things about a recipient should be refused rather
+// than resolved by position.
 func strictUnmarshal(encoded []byte, v any) error {
+	if err := rejectDuplicateKeys(encoded); err != nil {
+		return err
+	}
+
 	dec := json.NewDecoder(bytes.NewReader(encoded))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {

@@ -20,12 +20,6 @@ func write(t *testing.T, path, content string) {
 	}
 }
 
-// validAgeKey is a real-format age private key, assembled so that this source
-// file does not itself contain one as a literal.
-func validAgeKey() string {
-	return "AGE-SECRET-KEY-1" + strings.Repeat("Q", 58)
-}
-
 func TestScanFindsADotenvFile(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, ".env"), "SECRET=value\n")

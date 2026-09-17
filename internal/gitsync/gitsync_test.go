@@ -268,3 +268,57 @@ func writeFile(t *testing.T, dir, rel, content string) {
 		t.Fatal(err)
 	}
 }
+
+// TestSyncDoesNotCommitUnrelatedFiles is the regression test for a bare `git add -A`.
+//
+// The vault is an ordinary directory, and a directory can accumulate files that
+// have nothing to do with the vault. Staging everything would commit them without
+// a word, and quietly publishing something the user did not mean to publish is the
+// exact mistake this tool exists to prevent.
+func TestSyncDoesNotCommitUnrelatedFiles(t *testing.T) {
+	remote := seedRemote(t)
+	dir := cloneOf(t, remote)
+
+	writeFile(t, dir, "notes.txt", "not part of the vault")
+	writeFile(t, dir, "profiles/website-dev.age", "changed")
+
+	if _, err := (Git{Dir: dir}).Sync(context.Background(), ""); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	tracked := gitIn(t, dir, "ls-files")
+	if strings.Contains(tracked, "notes.txt") {
+		t.Errorf("sync committed an unrelated file:\n%s", tracked)
+	}
+	if !strings.Contains(tracked, "profiles/website-dev.age") {
+		t.Errorf("sync did not commit the profile:\n%s", tracked)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "notes.txt")); err != nil {
+		t.Error("sync deleted the unrelated file")
+	}
+}
+
+// TestSyncStagesADeletedProfile is the other half of the same fix.
+//
+// Scoping the pathspec means -A has to be kept: plain `git add <path>` does not
+// stage a deletion, and the commit would keep a profile the user believed they had
+// removed — a secret left in the repository.
+func TestSyncStagesADeletedProfile(t *testing.T) {
+	remote := seedRemote(t)
+	dir := cloneOf(t, remote)
+
+	if err := os.Remove(filepath.Join(dir, "profiles", "website-dev.age")); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := (Git{Dir: dir}).Sync(context.Background(), ""); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	if out := strings.TrimSpace(gitIn(t, dir, "status", "--porcelain")); out != "" {
+		t.Errorf("the deletion was not staged:\n%s", out)
+	}
+	if out := gitIn(t, dir, "ls-files"); strings.Contains(out, "profiles/website-dev.age") {
+		t.Errorf("the removed profile is still tracked:\n%s", out)
+	}
+}

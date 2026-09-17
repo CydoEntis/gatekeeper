@@ -85,6 +85,7 @@ var exitCodeGroups = []struct {
 		vault.ErrNameMismatch,
 		vault.ErrNotVault,
 		envelope.ErrNotDecryptable,
+		envelope.ErrPayloadTooLarge,
 		envelope.ErrBadIdentity,
 	}},
 	{ExitPermission, []error{
