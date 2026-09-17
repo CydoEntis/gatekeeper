@@ -1,0 +1,29 @@
+# Locally downloaded Go toolchain (spike only; delete once Go is installed properly)
+.toolchain/
+
+# Binaries
+/envsafe
+/envsafe.exe
+*.exe
+/dist/
+
+# Plaintext exports must never be committed
+.env
+.env.*
+!.env.example
+
+# Private identities never belong in the synchronized directory
+*.key
+identities/
+
+# Transient encrypted-write files
+.tmp-*
+*.tmp
+
+# Local config and editor/OS noise
+.envsafe/config.json
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+coverage.out

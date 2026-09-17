@@ -1,0 +1,12 @@
+# Encrypted profiles are age's native BINARY format.
+#
+# This is not cosmetic. Git for Windows installs with core.autocrlf=true by
+# default, which rewrites LF/CRLF inside files it believes are text. Doing that
+# to ciphertext silently corrupts the vault, and the failure surfaces later as
+# "not decryptable by this identity" -- indistinguishable from a wrong key,
+# which is exactly the sort of bug that costs an afternoon.
+#
+# Never let Git treat vault content as text.
+*.age binary
+*.key binary
+*.age diff=astextplain
