@@ -115,7 +115,9 @@ func (a App) Doctor(ctx context.Context, vaultDir string, unlock VaultRef) (Doct
 			add(checkIdentityPresent, false, "no local identity for this vault at "+path)
 		} else {
 			add(checkIdentityPresent, true, path)
-			if permErr := platform.CheckIdentityPerms(path); permErr != nil {
+			// The diagnostic form, deliberately: doctor reports on the file
+			// rather than reading it, so the check-by-path race does not apply.
+			if permErr := platform.CheckPrivateFilePerms(path); permErr != nil {
 				add(checkIdentityProtected, false, permErr.Error())
 			} else {
 				add(checkIdentityProtected, true, "encrypted at rest, and where it should be")

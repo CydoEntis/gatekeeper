@@ -103,10 +103,7 @@ func newSetCmd() *cobra.Command {
 // and in the process list, which is precisely what this tool exists to prevent.
 func readValue(w io.Writer, key, file string) (string, error) {
 	if file != "" {
-		if err := platform.CheckSecretFilePerms(file); err != nil {
-			return "", err
-		}
-		contents, err := os.ReadFile(file)
+		contents, err := platform.ReadPrivateFile(file)
 		if err != nil {
 			return "", fmt.Errorf("read value file: %w", err)
 		}

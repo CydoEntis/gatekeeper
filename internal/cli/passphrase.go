@@ -72,10 +72,7 @@ func promptPassphrase(w io.Writer, label string, confirm bool) (string, error) {
 // The permission check is not ceremony: a passphrase sitting in a world-readable
 // file defeats the entire reason the identity is encrypted at rest.
 func readPassphraseFile(path string) (string, error) {
-	if err := platform.CheckSecretFilePerms(path); err != nil {
-		return "", err
-	}
-	contents, err := os.ReadFile(path)
+	contents, err := platform.ReadPrivateFile(path)
 	if err != nil {
 		return "", fmt.Errorf("read passphrase file: %w", err)
 	}

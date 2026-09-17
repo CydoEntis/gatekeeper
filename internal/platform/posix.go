@@ -11,6 +11,8 @@ package platform
 
 import (
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 )
 
@@ -35,29 +37,50 @@ func SyncDir(dir string) error {
 	return nil
 }
 
-// CheckIdentityPerms refuses to use a private key other local users could read.
+// ReadPrivateFile reads a file holding a secret, refusing it if other local
+// users could read it.
 //
-// On POSIX this is a real check: the kernel enforces the mode bits.
-func CheckIdentityPerms(path string) error {
-	fi, err := os.Stat(path)
+// The permission check runs against the open file descriptor, not the path.
+// Checking a path and then reading it separately is a time-of-check to
+// time-of-use race: the file can be replaced in between, so the check would
+// describe a different file than the one whose bytes come back. Reading through
+// the very descriptor that was checked removes the window -- which is why the
+// check and the read are one function, rather than two calls a caller has to
+// order correctly every time.
+func ReadPrivateFile(path string) ([]byte, error) {
+	f, err := os.Open(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if perm := fi.Mode().Perm(); perm&GroupOrOtherBits != 0 {
-		return fmt.Errorf("%w: identity %s has permissions %04o; want 0600 (try: chmod 600 %s)",
-			ErrUnsafePerm, path, perm, path)
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	if err := checkPerms(fi, path); err != nil {
+		return nil, err
+	}
+	return io.ReadAll(f)
 }
 
-// CheckSecretFilePerms applies the same rule to any other file holding a secret,
-// such as a passphrase file. Same check, different message, because "identity"
-// would be misleading.
-func CheckSecretFilePerms(path string) error {
+// CheckPrivateFilePerms reports whether a private file is readable by other local
+// users, without opening it.
+//
+// This is the diagnostic form, for reporting *on* a file rather than using it.
+// It stats by path, so it must never be used to decide whether a file is safe to
+// read -- ReadPrivateFile is that decision, and it makes the check race-free.
+func CheckPrivateFilePerms(path string) error {
 	fi, err := os.Stat(path)
 	if err != nil {
 		return err
 	}
+	return checkPerms(fi, path)
+}
+
+// checkPerms is the one rule, so the diagnostic and the real read cannot drift
+// apart and disagree about what "safe" means.
+func checkPerms(fi fs.FileInfo, path string) error {
 	if perm := fi.Mode().Perm(); perm&GroupOrOtherBits != 0 {
 		return fmt.Errorf("%w: %s is readable by others (%04o); want 0600 (try: chmod 600 %s)",
 			ErrUnsafePerm, path, perm, path)

@@ -243,18 +243,16 @@ func Load(vaultID string, passphrase string) (Identity, error) {
 		return Identity{}, err
 	}
 
-	// Permission check first, so an unsafe key is refused before its bytes are
-	// read into the process.
-	if err := platform.CheckIdentityPerms(path); err != nil {
+	// The permission check happens inside ReadPrivateFile, against the open
+	// descriptor, so an unsafe key is refused before its bytes are used -- and
+	// there is no window between the check and the read for the file to be
+	// swapped underneath us.
+	sealed, err := platform.ReadPrivateFile(path)
+	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return Identity{}, fmt.Errorf("%w (looked for %s)", ErrNotFound, path)
 		}
 		return Identity{}, err
-	}
-
-	sealed, err := os.ReadFile(path)
-	if err != nil {
-		return Identity{}, fmt.Errorf("read identity: %w", err)
 	}
 
 	private, err := (envelope.PassphraseBox{}).Open(passphrase, sealed)
@@ -288,11 +286,7 @@ func Exists(vaultID string) bool {
 // The permission check is still applied: a recovery key left world-readable is
 // the same problem as any other exposed key.
 func ReadRawPrivateKey(path string) (string, error) {
-	if err := platform.CheckSecretFilePerms(path); err != nil {
-		return "", err
-	}
-
-	sealed, err := os.ReadFile(path)
+	sealed, err := platform.ReadPrivateFile(path)
 	if err != nil {
 		return "", fmt.Errorf("read identity: %w", err)
 	}

@@ -57,7 +57,22 @@ const (
 	envAppData      = "APPDATA"
 )
 
-// CheckIdentityPerms verifies the private key is in a per-user location.
+// ReadPrivateFile reads a file holding a secret, refusing it if it lives outside
+// the per-user profile.
+//
+// Unlike the POSIX version this does not gain anything from being handed an open
+// descriptor: there are no mode bits to inspect on one, and the rule below is
+// about where the file is rather than what it is. So this opens by path after
+// checking by path. The reasoning for the rule itself is in
+// CheckPrivateFilePerms.
+func ReadPrivateFile(path string) ([]byte, error) {
+	if err := checkPerUserProfile(path); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path)
+}
+
+// CheckPrivateFilePerms verifies the file is in a per-user location.
 //
 // It deliberately does NOT check mode bits, because on Windows there are none:
 // os.Chmod only toggles the read-only attribute and does nothing to stop another
@@ -76,17 +91,11 @@ const (
 // inside the profile is protected by that inherited ACL and by nothing more, so a
 // machine where another local account can read the profile directory is a machine
 // where the key is readable.
-func CheckIdentityPerms(path string) error {
-	return checkPerUserProfile(path, "identity")
+func CheckPrivateFilePerms(path string) error {
+	return checkPerUserProfile(path)
 }
 
-// CheckSecretFilePerms applies the same rule to any other file holding a secret,
-// such as a passphrase file.
-func CheckSecretFilePerms(path string) error {
-	return checkPerUserProfile(path, "file")
-}
-
-func checkPerUserProfile(path, what string) error {
+func checkPerUserProfile(path string) error {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return err
@@ -102,6 +111,6 @@ func checkPerUserProfile(path, what string) error {
 	}
 
 	return fmt.Errorf(
-		"%w: %s %s is outside the per-user profile; on Windows its ACL may let other "+
-			"local users read it, and mode bits cannot fix that", ErrUnsafePerm, what, abs)
+		"%w: %s is outside the per-user profile; on Windows its ACL may let other "+
+			"local users read it, and mode bits cannot fix that", ErrUnsafePerm, abs)
 }
