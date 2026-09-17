@@ -117,6 +117,19 @@ aspirations, and **each one needs a test**. Beyond those:
   (`App.Now`, `App.NewID`) rather than reached for. No test reads a developer's
   home directory or a real identity.
 - **Table tests with named cases** for anything with more than two branches.
+- **Fuzz the parsers.** A decoder reading attacker-influenced bytes must never
+  panic, and an encoder/decoder pair must round-trip exactly. Both properties are
+  fuzz targets in `internal/vault`, and the round-trip one found a silent
+  data-corruption bug within seconds of first being run:
+
+  ```sh
+  go test ./internal/vault/ -fuzz FuzzDecodeProfile -fuzztime 30s
+  go test ./internal/vault/ -fuzz FuzzRoundTrip    -fuzztime 30s
+  ```
+
+  The seed corpus runs as an ordinary test, so `go test ./...` still covers it. A
+  failing input is written to `testdata/` and **is committed** — it is a regression
+  case, not debris.
 - **Never real credentials**, in any test, ever. Canary values only, and the suite
   scans its own artifacts for them.
 - `t.Setenv` is how tests isolate the config directory, which **forbids

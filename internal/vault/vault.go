@@ -2,7 +2,6 @@ package vault
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -233,9 +232,9 @@ func (v *FileVault) writeAtomic(p Profile) error {
 
 	// The only plaintext copy is the in-memory payload handed to the envelope
 	// callback. It is never written anywhere except through the cipher.
-	payload, err := json.Marshal(p)
+	payload, err := encodeProfile(p)
 	if err != nil {
-		return fmt.Errorf("encode profile: %w", err)
+		return err
 	}
 
 	if err := v.Envelope.Encrypt(tmp, v.Recipients, func(w io.Writer) error {

@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"sort"
 	"time"
+	"unicode/utf8"
 )
 
 // FormatVersion is the only payload version this build understands. Anything
@@ -91,8 +92,35 @@ func (p Profile) Validate() error {
 		if bytes.IndexByte([]byte(v), 0) >= 0 {
 			return fmt.Errorf("%w: variable %q contains a NUL byte", ErrInvalidValue, k)
 		}
+		// Invalid UTF-8 is refused rather than stored, and this one is worth
+		// reading twice: encoding/json does not reject it, it *rewrites* it. A byte
+		// that is not valid UTF-8 is marshalled as the replacement character, so the
+		// value would be stored and returned different from what was entered — a
+		// credential that quietly changes, with nothing to indicate it happened.
+		//
+		// Found by fuzzing the encode/decode round trip. The usual cause in practice
+		// is a source file that is not UTF-8: a Windows-1252 `.env`, most often.
+		if !utf8.ValidString(v) {
+			return fmt.Errorf(
+				"%w: the value of %q is not valid UTF-8 (if it was imported, the "+
+					"source file may not be UTF-8)", ErrInvalidValue, k)
+		}
 	}
 	return nil
+}
+
+// encodeProfile renders a profile as the JSON that goes inside the age payload.
+//
+// It is the mirror of DecodeProfile, and it exists so the two can be tested
+// against each other: a fuzz test asserts that anything the decoder accepts
+// survives being encoded and decoded again unchanged. An encoder that lives inside
+// the write path cannot be reached by a test without also writing a file.
+func encodeProfile(p Profile) ([]byte, error) {
+	payload, err := json.Marshal(p)
+	if err != nil {
+		return nil, fmt.Errorf("encode profile: %w", err)
+	}
+	return payload, nil
 }
 
 // DecodeProfile enforces the strict decoding rules from ARCHITECTURE.md 4.3:
