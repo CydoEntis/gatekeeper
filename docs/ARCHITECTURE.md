@@ -713,12 +713,17 @@ Core modules return typed errors that commands translate into stable exit codes:
 | Category | Example | Suggested exit |
 | --- | --- | --- |
 | Usage | Invalid profile name, or no vault selected | 2 |
-| Not found | Missing profile or variable | 3 |
+| Not found | Missing profile, variable, or file named on the command line | 3 |
 | Locked | No matching local identity, or a passphrase that does not unlock it | 4 |
 | Conflict | Revision or synchronization conflict | 5 |
 | Integrity | Invalid or corrupted encrypted payload | 6 |
 | Permission | Unsafe identity file permissions, or an identity outside the per-user profile on Windows | 7 |
 | External | Synchronization or child-process startup failure | 8 |
+
+The classification is by sentinel, not by message, so wrapping an error does not
+change its code. "Not found" covers `os.ErrNotExist` as well as the vault and
+identity sentinels: a mistyped `--passphrase-file` is a path the user can fix, and
+reporting it as an unclassified failure (1) made a typo look like a bug here.
 
 Detailed errors should be useful without including sensitive values. Wrapped
 errors are allowed only after reviewing the upstream message for disclosure.

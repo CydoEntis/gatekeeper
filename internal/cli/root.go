@@ -66,6 +66,11 @@ var exitCodeGroups = []struct {
 	{ExitNotFound, []error{
 		vault.ErrNotFound,
 		identity.ErrNotFound,
+		// A file the user named that is not there -- a --passphrase-file, a
+		// --value-file, a --identity. Without this it fell through to
+		// ExitFailure, so a mistyped path was reported as an unclassified
+		// problem the user could not act on, which is the opposite of true.
+		os.ErrNotExist,
 	}},
 	// A wrong passphrase is a locked vault, not a corrupt one: the ciphertext is
 	// intact, and the caller simply cannot open it.

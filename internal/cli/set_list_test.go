@@ -153,6 +153,31 @@ func TestSetRefusesANonTerminalValueSource(t *testing.T) {
 	}
 }
 
+// TestAMissingPassphraseFileIsNotFoundNotAFailure checks a mistyped path is
+// reported as a missing file.
+//
+// It used to fall through to ExitFailure, which ARCHITECTURE.md section 9
+// reserves for "an unclassified problem the user cannot act on". A path the user
+// fat-fingered is the opposite of that, and the generic code made a typo look
+// like a bug in Gatekeeper.
+func TestAMissingPassphraseFileIsNotFoundNotAFailure(t *testing.T) {
+	v := newTestVault(t)
+	missing := filepath.Join(t.TempDir(), "no-such-passphrase-file")
+
+	// runArgs rather than v.run: v.run appends its own valid --passphrase-file,
+	// and cobra takes the last value, which would hide the one under test.
+	code, stdout, stderr := runArgs(t, "list", "--vault", v.dir, "--passphrase-file", missing)
+	if code != ExitNotFound {
+		t.Fatalf("exit = %d, want %d; stderr: %s", code, ExitNotFound, stderr)
+	}
+	if !strings.Contains(stderr, "no-such-passphrase-file") {
+		t.Errorf("error does not name the missing file: %s", stderr)
+	}
+	if strings.Contains(stdout+stderr, testCanary) {
+		t.Fatal("a value was disclosed while reporting a missing file")
+	}
+}
+
 // TestSetRejectsAWorldReadableValueFile applies the same rule as the passphrase:
 // a secret in a readable file is not protected.
 func TestSetRejectsAWorldReadableValueFile(t *testing.T) {
