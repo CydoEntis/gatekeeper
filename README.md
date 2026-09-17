@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.svg" width="128" height="128" alt="Gatekeeper">
+  <img src="assets/logo.png" width="320" alt="Gatekeeper">
 </p>
 
 <h1 align="center">Gatekeeper</h1>
