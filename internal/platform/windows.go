@@ -63,6 +63,13 @@ func SyncDir(dir string) error { return nil }
 // removed) via golang.org/x/sys/windows. This spike takes the cheap safe route
 // instead: require the key to live under the per-user profile, which Windows
 // already ACLs to the owning user. Explicit DACL hardening is a v0.1 task.
+// Per-user directories Windows already restricts to the owning user, which is
+// what makes them usable for a key without writing an explicit DACL.
+const (
+	envLocalAppData = "LOCALAPPDATA"
+	envAppData      = "APPDATA"
+)
+
 func CheckIdentityPerms(path string) error {
 	return checkPerUserProfile(path, "identity")
 }
@@ -79,7 +86,7 @@ func checkPerUserProfile(path, what string) error {
 		return err
 	}
 
-	for _, base := range []string{os.Getenv("LOCALAPPDATA"), os.Getenv("APPDATA")} {
+	for _, base := range []string{os.Getenv(envLocalAppData), os.Getenv(envAppData)} {
 		if base == "" {
 			continue
 		}

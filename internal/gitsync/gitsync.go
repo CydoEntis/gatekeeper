@@ -32,6 +32,48 @@ var (
 	ErrGitMissing = errors.New("git is not installed, or not on PATH")
 )
 
+// The git program, and every subcommand and flag this package runs.
+//
+// Named because they are a contract with another program rather than prose: a
+// typo is a runtime failure with a message from git about something else
+// entirely. They are also the answer to "what does `gk sync` actually run?", which
+// a user is entitled to read at a glance.
+const (
+	gitExecutable = "git"
+
+	gitRevParse         = "rev-parse"
+	gitIsInsideWorkTree = "--is-inside-work-tree"
+	gitStatus           = "status"
+	gitPorcelain        = "--porcelain"
+	gitPull             = "pull"
+	gitNoRebase         = "--no-rebase"
+	gitAdd              = "add"
+	gitAll              = "-A"
+	gitCommit           = "commit"
+	gitMessage          = "-m"
+	gitPush             = "push"
+)
+
+// What each step of a sync is called in the result, and how a generated commit
+// subject is shaped.
+//
+// A commit subject names profiles and nothing else; that rule is easier to keep
+// when the words are in one place.
+const (
+	stepPulled    = "pulled"
+	stepNoChanges = "no local changes"
+	stepCommitted = "committed: "
+	stepPushed    = "pushed"
+
+	commitSubjectPrefix = "Update "
+	commitSubjectEmpty  = "Update vault"
+	commitSubjectMany   = "Update %d profiles"
+
+	// indentUnit is how far wrapped git output is indented when it is handed back
+	// as part of an error.
+	indentUnit = "    "
+)
+
 // Result reports what a sync actually did, in order.
 type Result struct {
 	Steps   []string
@@ -51,20 +93,20 @@ type Git struct {
 func (g Git) Sync(ctx context.Context, message string) (Result, error) {
 	var result Result
 
-	if _, err := exec.LookPath("git"); err != nil {
+	if _, err := exec.LookPath(gitExecutable); err != nil {
 		return result, ErrGitMissing
 	}
 
-	if _, err := g.run(ctx, "rev-parse", "--is-inside-work-tree"); err != nil {
+	if _, err := g.run(ctx, gitRevParse, gitIsInsideWorkTree); err != nil {
 		return result, fmt.Errorf(
 			"%w: run `git init` in %s, add a remote, and push once", ErrNotARepository, g.Dir)
 	}
 
 	// --- Pull ---------------------------------------------------------------
-	if out, err := g.run(ctx, "pull", "--no-rebase"); err != nil {
+	if out, err := g.run(ctx, gitPull, gitNoRebase); err != nil {
 		return result, fmt.Errorf("%w\n\n%s%s", ErrMergeConflict, indent(out), conflictHelp)
 	}
-	result.Steps = append(result.Steps, "pulled")
+	result.Steps = append(result.Steps, stepPulled)
 
 	// --- Commit anything local ---------------------------------------------
 	status, err := g.status(ctx)
@@ -74,35 +116,35 @@ func (g Git) Sync(ctx context.Context, message string) (Result, error) {
 	result.Changed = profileNames(status)
 
 	if len(status) == 0 {
-		result.Steps = append(result.Steps, "no local changes")
+		result.Steps = append(result.Steps, stepNoChanges)
 	} else {
-		if _, err := g.run(ctx, "add", "-A"); err != nil {
+		if _, err := g.run(ctx, gitAdd, gitAll); err != nil {
 			return result, fmt.Errorf("staging vault changes: %w", err)
 		}
 		if message == "" {
 			message = commitMessage(result.Changed)
 		}
-		if out, err := g.run(ctx, "commit", "-m", message); err != nil {
+		if out, err := g.run(ctx, gitCommit, gitMessage, message); err != nil {
 			return result, fmt.Errorf("committing vault changes: %w%s", err, indent(out))
 		}
 		result.Commit = message
-		result.Steps = append(result.Steps, "committed: "+message)
+		result.Steps = append(result.Steps, stepCommitted+message)
 	}
 
 	// --- Push ---------------------------------------------------------------
 	// Pushing even when nothing was committed is deliberate: a previous run may
 	// have committed and then failed to reach the network.
-	if out, err := g.run(ctx, "push"); err != nil {
+	if out, err := g.run(ctx, gitPush); err != nil {
 		return result, fmt.Errorf("%w%s", err, indent(out))
 	}
-	result.Steps = append(result.Steps, "pushed")
+	result.Steps = append(result.Steps, stepPushed)
 
 	return result, nil
 }
 
 // status returns git's porcelain status lines.
 func (g Git) status(ctx context.Context) ([]string, error) {
-	out, err := g.run(ctx, "status", "--porcelain")
+	out, err := g.run(ctx, gitStatus, gitPorcelain)
 	if err != nil {
 		return nil, fmt.Errorf("reading vault status: %w", err)
 	}
@@ -117,7 +159,7 @@ func (g Git) status(ctx context.Context) ([]string, error) {
 }
 
 func (g Git) run(ctx context.Context, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, gitExecutable, args...)
 	cmd.Dir = g.Dir
 
 	var out strings.Builder
@@ -160,13 +202,13 @@ func profileNames(status []string) []string {
 func commitMessage(changed []string) string {
 	switch {
 	case len(changed) == 0:
-		return "Update vault"
+		return commitSubjectEmpty
 	case len(changed) == 1:
-		return "Update " + changed[0]
+		return commitSubjectPrefix + changed[0]
 	case len(changed) <= 3:
-		return "Update " + strings.Join(changed, ", ")
+		return commitSubjectPrefix + strings.Join(changed, ", ")
 	default:
-		return fmt.Sprintf("Update %d profiles", len(changed))
+		return fmt.Sprintf(commitSubjectMany, len(changed))
 	}
 }
 
@@ -178,7 +220,7 @@ func indent(s string) string {
 	var b strings.Builder
 	b.WriteByte('\n')
 	for _, line := range strings.Split(s, "\n") {
-		b.WriteString("    ")
+		b.WriteString(indentUnit)
 		b.WriteString(line)
 		b.WriteByte('\n')
 	}

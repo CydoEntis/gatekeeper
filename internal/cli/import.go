@@ -110,7 +110,7 @@ func openDotenvSource(cmd *cobra.Command, file string) (io.Reader, func(), error
 		return cmd.InOrStdin(), func() {}, nil
 	}
 
-	if runtime.GOOS != "windows" {
+	if runtime.GOOS != platform.GOOSWindows {
 		if fi, err := os.Stat(file); err == nil && fi.Mode().Perm()&platform.GroupOrOtherBits != 0 {
 			fmt.Fprintf(cmd.ErrOrStderr(),
 				"warning: %s is readable by other users (%04o). It holds secrets in the\n"+

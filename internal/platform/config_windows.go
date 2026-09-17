@@ -16,7 +16,7 @@ import (
 // case where the platform-appropriate answer differs between Windows and
 // everything else, which is exactly why it lives in the platform module.
 func ConfigDir() (string, error) {
-	base := os.Getenv("LOCALAPPDATA")
+	base := os.Getenv(envLocalAppData)
 	if base == "" {
 		return "", fmt.Errorf("LOCALAPPDATA is not set; cannot locate the per-user configuration directory")
 	}

@@ -6,11 +6,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"gatekeeper/internal/platform"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -127,17 +129,20 @@ func ResolveExecutable(name string) (string, error) {
 	return found, nil
 }
 
+// shimExtensions are the Windows script types that CreateProcess cannot launch
+// directly, and which therefore have to go through cmd.exe.
+//
+// This list is the whole of the `.cmd` policy: anything in it is routed through a
+// shell, and everything else is started directly.
+var shimExtensions = []string{".cmd", ".bat"}
+
 // isShellShim reports whether a resolved path is a Windows batch shim.
 //
 // It is a separate function so the classification can be unit-tested on any
 // operating system: this is the single most likely way the tool feels broken on
 // the primary platform, and it should not be testable only on Windows.
 func isShellShim(path string) bool {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".cmd", ".bat":
-		return true
-	}
-	return false
+	return slices.Contains(shimExtensions, strings.ToLower(filepath.Ext(path)))
 }
 
 // launchArgv decides how a resolved executable should be started.
@@ -155,7 +160,7 @@ func isShellShim(path string) bool {
 // goos is a parameter rather than a direct runtime.GOOS check so that the Windows
 // decision is testable from any platform.
 func launchArgv(goos, path string, args []string) (argv []string, usedShell bool) {
-	if goos == "windows" && isShellShim(path) {
+	if goos == platform.GOOSWindows && isShellShim(path) {
 		return append([]string{windowsShell, windowsShellSwitch, path}, args...), true
 	}
 	return append([]string{path}, args...), false

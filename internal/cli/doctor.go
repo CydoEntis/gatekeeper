@@ -55,6 +55,20 @@ func newDoctorCmd() *cobra.Command {
 	return cmd
 }
 
+// Status markers for a doctor report.
+//
+// Fixed width on purpose: the check names line up underneath them, and "skip" is
+// a third state rather than a quiet pass — a check that could not run must not
+// look like one that succeeded.
+const (
+	statusOK      = "ok  "
+	statusFailed  = "FAIL"
+	statusSkipped = "skip"
+)
+
+// checkNameWidth is how much room a check name is given before its detail.
+const checkNameWidth = 28
+
 func runDoctor(cmd *cobra.Command) error {
 	dir, err := resolveVaultDir(cmd)
 	if err != nil {
@@ -78,14 +92,14 @@ func runDoctor(cmd *cobra.Command) error {
 
 	out := cmd.OutOrStdout()
 	for _, c := range report.Checks {
-		mark := "ok  "
+		mark := statusOK
 		switch {
 		case c.Skipped:
-			mark = "skip"
+			mark = statusSkipped
 		case !c.OK:
-			mark = "FAIL"
+			mark = statusFailed
 		}
-		fmt.Fprintf(out, "  %s  %-28s %s\n", mark, c.Name, c.Detail)
+		fmt.Fprintf(out, "  %s  %-*s %s\n", mark, checkNameWidth, c.Name, c.Detail)
 	}
 
 	if failed := report.Failed(); len(failed) > 0 {

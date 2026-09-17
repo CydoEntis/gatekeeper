@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -118,28 +119,41 @@ func Scan(root string) ([]Finding, error) {
 	return findings, nil
 }
 
-// suspectName reports why a filename alone is a reason to stop.
+// Names that identify a secret by filename alone.
 //
-// Name checks matter more than they look. A Gatekeeper identity file is
-// passphrase-encrypted, so its *contents* are opaque and a content scan cannot
-// recognise it — the filename is the only signal there is.
+// These carry more weight than a content check: a Gatekeeper identity is
+// passphrase-encrypted, so its bytes are opaque and the name is the only signal
+// there is.
+const (
+	dotenvName   = ".env"
+	dotenvPrefix = ".env."
+
+	reasonDotenv     = "a dotenv file, which holds secrets in the clear"
+	reasonKeyFile    = "a file named like a private key"
+	reasonSSHKeyFile = "an SSH private key"
+)
+
+// privateKeyExtensions name a private key by convention.
+var privateKeyExtensions = []string{".key", ".p12", ".pfx"}
+
+// sshKeyNames are the conventional filenames of an SSH private key.
+var sshKeyNames = []string{"id_rsa", "id_ed25519", "id_ecdsa", "id_dsa"}
+
+// suspectName reports why a filename alone is a reason to stop.
 func suspectName(name string) string {
 	lower := strings.ToLower(name)
 
-	if lower == ".env" {
-		return "a dotenv file, which holds secrets in the clear"
+	if lower == dotenvName {
+		return reasonDotenv
 	}
-	if strings.HasPrefix(lower, ".env.") && !allowedEnvNames[lower] {
-		return "a dotenv file, which holds secrets in the clear"
+	if strings.HasPrefix(lower, dotenvPrefix) && !allowedEnvNames[lower] {
+		return reasonDotenv
 	}
-	if strings.HasSuffix(lower, ".key") ||
-		strings.HasSuffix(lower, ".p12") ||
-		strings.HasSuffix(lower, ".pfx") {
-		return "a file named like a private key"
+	if slices.Contains(privateKeyExtensions, filepath.Ext(lower)) {
+		return reasonKeyFile
 	}
-	switch lower {
-	case "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa":
-		return "an SSH private key"
+	if slices.Contains(sshKeyNames, lower) {
+		return reasonSSHKeyFile
 	}
 	return ""
 }
