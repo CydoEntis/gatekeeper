@@ -309,6 +309,8 @@ the acceptance criteria, and what is deliberately not being built.
 [`docs/STATUS.md`](docs/STATUS.md) is the short version: where the work stands and
 what comes next. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) is the deeper
 technical design, and its security invariants are requirements rather than plans.
+[`docs/CODE-STANDARDS.md`](docs/CODE-STANDARDS.md) covers naming, boundaries,
+error handling, testing, and the commit format.
 
 ## License
 
