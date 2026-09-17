@@ -306,8 +306,7 @@ caught before any unlock; a wrong passphrase exits as *locked*, not *corrupt*.
 One bug the end-to-end run caught that no unit test had: profiles were being
 written to the vault root instead of `profiles/`, so `gk init` created a
 `profiles/` directory that nothing ever wrote to, and the implementation silently
-disagreed with §4.1. Fixed, and the spike's hard-coded path with it. Running the
-thing for real is not optional.
+disagreed with §4.1. Fixed. Running the thing for real is not optional.
 
 ### Step 4 — `import` and `export` ✅ **done**
 
@@ -630,14 +629,17 @@ internal/dotenv/         a parser that never evaluates, and lossless formatting
 internal/guard/          finds secrets that are about to be committed
 internal/platform/       the POSIX/Windows seam (build-tagged)
 internal/runner/         child process launch and environment merge
-internal/spike/          the end-to-end canary test
 ```
 
-The spike from the original §18 is still passing: it validates
-`profile -> age -> safe persistence -> decryption -> child environment` and scans
-for plaintext disclosure, independently of the real commands. It can be deleted
-once the CLI's own tests are judged to cover the same ground — the `run` tests now
-do most of it.
+The §18 vertical spike has been deleted. It validated `profile -> age -> safe
+persistence -> decryption -> child environment` and scanned for plaintext
+disclosure, and the `app` and `cli` tests now cover that ground against the real
+commands. Three checks it did make that nothing else did were ported into
+`internal/vault/vault_test.go` first: an unauthorized identity cannot read a
+profile, a failed write leaves no temporary file behind, and the profile decoder
+rejects hostile payloads. The last two were rewritten in the process — the
+temp-file check had never actually been able to fail, because a *successful* write
+renames the temp file into place, so only the failure path exercises the cleanup.
 
 Dependencies: `filippo.io/age`, `github.com/spf13/cobra`, `golang.org/x/sys`
 (Windows), `golang.org/x/term`. Nothing else. Keep it that way — for a tool that

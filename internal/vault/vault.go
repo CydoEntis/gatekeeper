@@ -204,7 +204,7 @@ func (v *FileVault) Change(ctx context.Context, name string, fn ChangeFunc) (Sum
 func (v *FileVault) writeAtomic(p Profile) error {
 	dir := v.profilesDir()
 	// Ensure the directory exists, so a FileVault constructed directly -- as the
-	// spike and the tests do -- behaves the same as one built by Open.
+	// tests do -- behaves the same as one built by Open.
 	if err := os.MkdirAll(dir, platform.PrivateDirMode); err != nil {
 		return fmt.Errorf("create profiles directory: %w", err)
 	}

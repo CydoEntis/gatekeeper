@@ -296,11 +296,11 @@ system in the first version.
 
 ## Development status
 
-There is no release. `gk init` works: it creates a vault, a device identity, and
-an offline recovery identity, and refuses if any private key would land inside the
-vault directory. The remaining commands are not built. A vertical spike proves the
-load-bearing path — profile → age encryption → safe persistence → decryption →
-child environment — and scans for plaintext disclosure.
+There is no release, but the v0.1 command set is feature-complete: create a vault
+with an offline recovery identity, store and retrieve secrets, run a command with
+a profile injected, import and export in bulk, sync between machines, change the
+passphrase, flag an exposed key, and open a vault with only the recovery identity.
+[`docs/STATUS.md`](docs/STATUS.md) records the precise state of each command.
 
 **Start with [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md)** — it is
 the plan, and it is authoritative. It carries the security model, the build order,

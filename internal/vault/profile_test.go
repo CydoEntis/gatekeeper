@@ -62,6 +62,71 @@ func TestValidUTF8IsStillAccepted(t *testing.T) {
 	}
 }
 
+// TestDecodeProfileRejectsHostilePayloads covers the decoding rules that
+// encoding/json does not give us for free, from the profile decoder's side.
+//
+// meta_test.go makes the same demands of the manifest and devices decoders. They
+// are separate functions over separate bytes, so one being strict says nothing
+// about the other, and a profile is the one an attacker has the most reason to
+// tamper with.
+func TestDecodeProfileRejectsHostilePayloads(t *testing.T) {
+	cases := []struct {
+		name    string
+		payload string
+		want    error
+	}{
+		{
+			name:    "duplicate key",
+			payload: `{"format":1,"name":"demo","variables":{"A":"1","A":"2"}}`,
+			want:    ErrDuplicateKey,
+		},
+		{
+			name:    "unsupported format",
+			payload: `{"format":99,"name":"demo","variables":{}}`,
+			want:    ErrUnsupportedFormat,
+		},
+		{
+			name:    "unknown field",
+			payload: `{"format":1,"name":"demo","variables":{},"extra":true}`,
+			// Any error is acceptable here; what matters is that it fails closed
+			// rather than ignoring the field it does not understand.
+			want: nil,
+		},
+		{
+			name:    "trailing content",
+			payload: `{"format":1,"name":"demo","variables":{}}{"format":1}`,
+			want:    ErrTrailingContent,
+		},
+		{
+			name:    "illegal variable name",
+			payload: `{"format":1,"name":"demo","variables":{"not a name":"1"}}`,
+			want:    ErrInvalidName,
+		},
+		{
+			name:    "NUL in value",
+			payload: `{"format":1,"name":"demo","variables":{"A":"a\u0000b"}}`,
+			want:    ErrInvalidValue,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			profile, err := DecodeProfile(strings.NewReader(tc.payload))
+			if err == nil {
+				t.Fatalf("payload was accepted; it must fail closed")
+			}
+			if tc.want != nil && !errors.Is(err, tc.want) {
+				t.Fatalf("err = %v, want %v", err, tc.want)
+			}
+			// A caller that ignored the error must not be able to act on
+			// invented data, so no half-decoded profile may come back with it.
+			if profile.Name != "" || len(profile.Variables) != 0 {
+				t.Errorf("returned a profile alongside an error: %+v", profile)
+			}
+		})
+	}
+}
+
 // FuzzDecodeProfile exercises the decoder that reads attacker-influenced bytes.
 //
 // A profile is decrypted ciphertext, which is to say bytes this project did not

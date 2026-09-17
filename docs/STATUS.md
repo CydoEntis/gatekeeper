@@ -38,10 +38,10 @@ service, no subscription, no account.
 All six v0.1 commands are implemented, plus `doctor` and the recovery path. **The
 v0.1 build is feature-complete** and the security-review checklist in §9 of the
 plan has been run.
-| Vertical spike (§18 of the plan) | Implemented and passing — proves the crypto-to-child-process path and scans for disclosure |
+| End-to-end path | Covered by the `app` and `cli` tests — vault → age encryption → safe persistence → decryption → child environment, including a scan for disclosure |
 | Tests | `go test -race ./...` green across all packages |
 | Builds | Windows, macOS and Linux all compile and vet clean |
-| Git | Repository initialised; nothing committed yet |
+| Git | Repository initialised, on branch `refactor/code-standards`; nothing pushed |
 
 ## What is next
 
