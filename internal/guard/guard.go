@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -37,15 +38,24 @@ type Finding struct {
 
 func (f Finding) String() string { return fmt.Sprintf("%s: %s", f.Path, f.Reason) }
 
+// The shape of a complete age private key.
+const (
+	// ageSecretKeyPrefix is how every age private key begins.
+	ageSecretKeyPrefix = "AGE-SECRET-KEY-1"
+
+	// ageSecretKeyLength is how many base32 characters follow the prefix.
+	//
+	// Matching the full length, rather than the prefix alone, is what makes the
+	// scanner usable: source code, documentation and fixtures mention the prefix
+	// constantly, and a guard that flags all of them is a guard nobody keeps
+	// installed.
+	ageSecretKeyLength = 58
+)
+
 var (
 	// ageKeyRE matches a real age private key: the prefix followed by the full
-	// bech32 data part.
-	//
-	// The length is what makes this usable. A looser prefix match would flag every
-	// comment and test fixture that merely mentions the format — including this
-	// project's own source — and a guard that cries wolf is a guard nobody keeps
-	// installed.
-	ageKeyRE = regexp.MustCompile(`AGE-SECRET-KEY-1[0-9A-Z]{58}`)
+	// bech32 contents part.
+	ageKeyRE = regexp.MustCompile(ageSecretKeyPrefix + `[0-9A-Z]{` + strconv.Itoa(ageSecretKeyLength) + `}`)
 
 	// privateKeyRE matches a PEM private key block *with content*.
 	//
@@ -141,19 +151,19 @@ func suspectContent(path string) string {
 		return ""
 	}
 
-	data, err := os.ReadFile(path)
+	contents, err := os.ReadFile(path)
 	if err != nil {
 		return ""
 	}
 	// Ciphertext and binaries are not text, and scanning them is meaningless.
-	if bytes.IndexByte(data, 0) >= 0 {
+	if bytes.IndexByte(contents, 0) >= 0 {
 		return ""
 	}
 
-	if ageKeyRE.Match(data) {
+	if ageKeyRE.Match(contents) {
 		return "an unencrypted age private key"
 	}
-	if privateKeyRE.Match(data) {
+	if privateKeyRE.Match(contents) {
 		return "a private key"
 	}
 	return ""

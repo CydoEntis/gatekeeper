@@ -12,6 +12,7 @@ import (
 
 	"gatekeeper/internal/envelope"
 	"gatekeeper/internal/identity"
+	"gatekeeper/internal/platform"
 	"gatekeeper/internal/vault"
 )
 
@@ -335,7 +336,7 @@ func TestInitUndoesEverythingOnFailure(t *testing.T) {
 
 	// A file where a directory needs to be, so creating the vault must fail.
 	blocker := filepath.Join(base, "blocker")
-	if err := os.WriteFile(blocker, []byte("not a directory"), 0o600); err != nil {
+	if err := os.WriteFile(blocker, []byte("not a directory"), platform.PrivateFileMode); err != nil {
 		t.Fatal(err)
 	}
 

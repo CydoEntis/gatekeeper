@@ -10,6 +10,7 @@ import (
 
 	"gatekeeper/internal/app"
 	"gatekeeper/internal/dotenv"
+	"gatekeeper/internal/platform"
 	"gatekeeper/internal/vault"
 )
 
@@ -41,7 +42,7 @@ func newImportCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			profile, file := args[0], args[1]
 			if !vault.ValidProfileName(profile) {
-				return fmt.Errorf("%w: profile name %q", vault.ErrInvalidName, profile)
+				return vault.InvalidProfileName(profile)
 			}
 
 			source, closeSource, err := openDotenvSource(cmd, file)
@@ -90,10 +91,9 @@ func newImportCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&passphraseFile, "passphrase-file", "",
-		"read the passphrase from this 0600 file instead of prompting")
-	cmd.Flags().BoolVar(&overwrite, "overwrite", false,
-		"replace variables that already exist with a different value")
+	addPassphraseFlag(cmd, &passphraseFile)
+	cmd.Flags().BoolVar(&overwrite, flagOverwrite, false,
+		helpOverwrite)
 
 	return cmd
 }
@@ -111,7 +111,7 @@ func openDotenvSource(cmd *cobra.Command, file string) (io.Reader, func(), error
 	}
 
 	if runtime.GOOS != "windows" {
-		if fi, err := os.Stat(file); err == nil && fi.Mode().Perm()&0o077 != 0 {
+		if fi, err := os.Stat(file); err == nil && fi.Mode().Perm()&platform.GroupOrOtherBits != 0 {
 			fmt.Fprintf(cmd.ErrOrStderr(),
 				"warning: %s is readable by other users (%04o). It holds secrets in the\n"+
 					"         clear; delete it or chmod 600 it once you are done.\n",

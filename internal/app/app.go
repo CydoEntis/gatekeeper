@@ -15,6 +15,7 @@ import (
 
 	"gatekeeper/internal/identity"
 	"gatekeeper/internal/localconfig"
+	"gatekeeper/internal/platform"
 	"gatekeeper/internal/vault"
 )
 
@@ -36,6 +37,9 @@ type App struct {
 	Now   func() time.Time
 	NewID func() (string, error)
 }
+
+// DefaultVaultName labels a vault when the caller does not name one.
+const DefaultVaultName = "personal"
 
 // New returns an App wired to the real clock and a random ID source.
 func New() App {
@@ -105,41 +109,9 @@ func (a App) Init(ctx context.Context, req InitRequest) (InitResult, error) {
 	if err := ctx.Err(); err != nil {
 		return InitResult{}, err
 	}
-	if req.VaultDir == "" {
-		return InitResult{}, fmt.Errorf("%w: no vault directory given", ErrUsage)
-	}
-
-	dir, err := filepath.Abs(req.VaultDir)
+	req = normalizeInitRequest(req)
+	dir, err := validateInitRequest(req)
 	if err != nil {
-		return InitResult{}, fmt.Errorf("%w: %v", ErrUsage, err)
-	}
-	if req.Name == "" {
-		req.Name = "personal"
-	}
-	if req.DeviceName == "" {
-		req.DeviceName = req.Name
-	}
-
-	// --- Preconditions, before anything exists -------------------------------
-
-	if _, err := os.Stat(filepath.Join(dir, vault.ManifestFile)); err == nil {
-		// Refuse rather than overwrite. Re-initializing would issue a new
-		// identity and orphan every profile encrypted to the old one.
-		return InitResult{}, fmt.Errorf("%w: %s", ErrAlreadyInitialized, dir)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return InitResult{}, fmt.Errorf("inspect vault directory: %w", err)
-	}
-
-	if req.RecoveryOut == "" && !req.RecoveryPrintable {
-		return InitResult{}, fmt.Errorf(
-			"%w: standard output is not a terminal, so the recovery identity would be "+
-				"captured by a pipe, file, or log instead of being seen once. "+
-				"Pass --recovery-out PATH to write it somewhere you control", ErrRecoveryUndeliverable)
-	}
-
-	// The passphrase is checked before anything is created, for the same reason:
-	// a refusal must cost nothing and leave no debris behind.
-	if err := identity.ValidatePassphrase(req.Passphrase); err != nil {
 		return InitResult{}, err
 	}
 
@@ -158,60 +130,18 @@ func (a App) Init(ctx context.Context, req InitRequest) (InitResult, error) {
 		return InitResult{}, fmt.Errorf("generate recovery identity: %w", err)
 	}
 
-	// --- Create, with undo on any failure ------------------------------------
-
-	// The private identity goes to the per-user config directory, deliberately
-	// NOT into dir, and is encrypted under the passphrase. This is
-	// ARCHITECTURE.md invariant #1, plus the control that replaces full-disk
-	// encryption.
+	// The private identity goes to the per-user config directory, deliberately NOT
+	// into dir, and is encrypted under the passphrase. This is ARCHITECTURE.md
+	// invariant #1, plus the control that replaces full-disk encryption.
 	identityPath, err := identity.Save(device, req.Passphrase)
 	if err != nil {
 		return InitResult{}, err
 	}
+	undo := removeInitArtifacts(dir, identityPath)
 
-	undo := func() {
-		// Only ever removes things this function just created.
-		_ = os.Remove(identityPath)
-		_ = os.Remove(filepath.Join(dir, vault.ManifestFile))
-		_ = os.Remove(filepath.Join(dir, vault.DevicesFile))
-		_ = os.Remove(filepath.Join(dir, vault.GitignoreFile))
-		_ = os.Remove(filepath.Join(dir, vault.ProfilesDir))
-		_ = os.Remove(dir) // succeeds only when empty
-	}
-
-	if err := os.MkdirAll(filepath.Join(dir, vault.ProfilesDir), 0o700); err != nil {
-		undo()
-		return InitResult{}, fmt.Errorf("create vault directory: %w", err)
-	}
-
-	now := a.Now().UTC()
-	manifest := vault.Manifest{
-		Format:    vault.FormatVersion,
-		VaultID:   vaultID,
-		Name:      req.Name,
-		CreatedAt: now,
-	}
-	devices := vault.Devices{
-		Format:   vault.FormatVersion,
-		Revision: 1,
-		Devices: []vault.Device{{
-			ID:        vaultID,
-			Name:      req.DeviceName,
-			Recipient: device.Recipient,
-			AddedAt:   now,
-		}},
-		RecoveryRecipient: recovery.Recipient,
-	}
-
-	if err := vault.WriteManifest(dir, manifest); err != nil {
-		undo()
-		return InitResult{}, err
-	}
-	if err := vault.WriteDevices(dir, devices); err != nil {
-		undo()
-		return InitResult{}, err
-	}
-	if err := vault.WriteGitignore(dir); err != nil {
+	// From here every failure undoes what has been created, so a failed init can
+	// never leave a vault whose key is missing or a key whose vault is missing.
+	if err := installVault(dir, req, vaultID, device, recovery, a.Now().UTC()); err != nil {
 		undo()
 		return InitResult{}, err
 	}
@@ -226,30 +156,143 @@ func (a App) Init(ctx context.Context, req InitRequest) (InitResult, error) {
 		IdentityPath:      identityPath,
 	}
 
-	// --- Deliver the recovery identity ---------------------------------------
-
-	if req.RecoveryOut != "" {
-		if err := identity.WriteRecovery(req.RecoveryOut, recovery.Private); err != nil {
-			undo()
-			return InitResult{}, err
-		}
-		result.RecoveryWrittenTo = req.RecoveryOut
-	} else {
-		result.RecoveryIdentity = recovery.Private
+	if err := deliverRecovery(&result, req, recovery); err != nil {
+		undo()
+		return InitResult{}, err
 	}
 
 	if req.SetDefault {
-		cfg, err := localconfig.Load()
-		if err != nil {
-			undo()
-			return InitResult{}, err
-		}
-		cfg.DefaultVault = dir
-		if err := localconfig.Save(cfg); err != nil {
+		if err := recordDefaultVault(dir); err != nil {
 			undo()
 			return InitResult{}, err
 		}
 	}
 
 	return result, nil
+}
+
+// normalizeInitRequest fills in the labels a caller may leave unset.
+func normalizeInitRequest(req InitRequest) InitRequest {
+	if req.Name == "" {
+		req.Name = DefaultVaultName
+	}
+	if req.DeviceName == "" {
+		req.DeviceName = req.Name
+	}
+	return req
+}
+
+// validateInitRequest refuses anything that must not proceed, and returns the
+// absolute vault directory.
+//
+// Every check here happens before the first file is created. That ordering is the
+// point: a refusal must cost the user nothing and leave no debris behind, and the
+// simplest way to guarantee it is to refuse while nothing exists yet.
+func validateInitRequest(req InitRequest) (string, error) {
+	if req.VaultDir == "" {
+		return "", fmt.Errorf("%w: no vault directory given", ErrUsage)
+	}
+
+	dir, err := filepath.Abs(req.VaultDir)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrUsage, err)
+	}
+
+	// Refuse rather than overwrite: re-initializing would issue a new identity and
+	// orphan every profile encrypted to the old one.
+	switch _, err := os.Stat(filepath.Join(dir, vault.ManifestFile)); {
+	case err == nil:
+		return "", fmt.Errorf("%w: %s", ErrAlreadyInitialized, dir)
+	case !errors.Is(err, os.ErrNotExist):
+		return "", fmt.Errorf("inspect vault directory: %w", err)
+	}
+
+	if req.RecoveryOut == "" && !req.RecoveryPrintable {
+		return "", fmt.Errorf(
+			"%w: standard output is not a terminal, so the recovery identity would be "+
+				"captured by a pipe, file, or log instead of being seen once. "+
+				"Pass --recovery-out PATH to write it somewhere you control", ErrRecoveryUndeliverable)
+	}
+
+	return dir, identity.ValidatePassphrase(req.Passphrase)
+}
+
+// removeInitArtifacts returns the undo for a partially created vault.
+//
+// It only ever removes what Init itself just created. The final Remove succeeds
+// only when the directory is empty, so a vault directory that already held
+// unrelated files is left alone rather than emptied.
+func removeInitArtifacts(dir, identityPath string) func() {
+	return func() {
+		_ = os.Remove(identityPath)
+		_ = os.Remove(filepath.Join(dir, vault.ManifestFile))
+		_ = os.Remove(filepath.Join(dir, vault.DevicesFile))
+		_ = os.Remove(filepath.Join(dir, vault.GitignoreFile))
+		_ = os.Remove(filepath.Join(dir, vault.ProfilesDir))
+		_ = os.Remove(dir)
+	}
+}
+
+// installVault writes the vault directory: the profiles directory, then the
+// public metadata. Nothing here is secret.
+func installVault(dir string, req InitRequest, vaultID string, device, recovery identity.Identity, now time.Time) error {
+	if err := os.MkdirAll(filepath.Join(dir, vault.ProfilesDir), platform.PrivateDirMode); err != nil {
+		return fmt.Errorf("create vault directory: %w", err)
+	}
+
+	// Every profile is encrypted to both recipients, so losing every machine is
+	// survivable as long as the recovery key survives.
+	devices := vault.Devices{
+		Format:   vault.FormatVersion,
+		Revision: 1,
+		Devices: []vault.Device{{
+			ID:        vaultID,
+			Name:      req.DeviceName,
+			Recipient: device.Recipient,
+			AddedAt:   now,
+		}},
+		RecoveryRecipient: recovery.Recipient,
+	}
+	manifest := vault.Manifest{
+		Format:    vault.FormatVersion,
+		VaultID:   vaultID,
+		Name:      req.Name,
+		CreatedAt: now,
+	}
+
+	if err := vault.WriteManifest(dir, manifest); err != nil {
+		return err
+	}
+	if err := vault.WriteDevices(dir, devices); err != nil {
+		return err
+	}
+	return vault.WriteGitignore(dir)
+}
+
+// deliverRecovery hands the offline recovery identity to the user, exactly once.
+//
+// It is the only private key Gatekeeper emits, and where it goes is the caller's
+// decision: an explicit file, or a terminal. It is never stored locally, because
+// a recovery key that lives only on the machine it is meant to recover is not a
+// recovery key.
+func deliverRecovery(result *InitResult, req InitRequest, recovery identity.Identity) error {
+	if req.RecoveryOut != "" {
+		if err := identity.WriteRecovery(req.RecoveryOut, recovery.Private); err != nil {
+			return err
+		}
+		result.RecoveryWrittenTo = req.RecoveryOut
+		return nil
+	}
+	result.RecoveryIdentity = recovery.Private
+	return nil
+}
+
+// recordDefaultVault makes dir the vault later commands use without being told.
+func recordDefaultVault(dir string) error {
+	cfg, err := localconfig.Load()
+	if err != nil {
+		return err
+	}
+	cfg.DefaultVault = dir
+	return localconfig.Save(cfg)
 }

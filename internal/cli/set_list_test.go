@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"gatekeeper/internal/platform"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -67,7 +68,7 @@ func (v testVault) run(t *testing.T, args ...string) (int, string, string) {
 // test: the value goes in, and nothing about it comes out.
 func TestSetStoresWithoutDisclosingAnything(t *testing.T) {
 	v := newTestVault(t)
-	valuePath := passphraseFileWith(t, testCanary, 0o600)
+	valuePath := passphraseFileWith(t, testCanary, platform.PrivateFileMode)
 
 	code, stdout, stderr := v.run(t, "set", "website-dev", "DATABASE_URL", "--value-file", valuePath)
 	if code != ExitOK {
@@ -100,7 +101,7 @@ func TestSetStoresWithoutDisclosingAnything(t *testing.T) {
 // only way to find out what exists while `gk profile create` is deferred.
 func TestListWithNoArgumentNamesTheProfiles(t *testing.T) {
 	v := newTestVault(t)
-	valuePath := passphraseFileWith(t, testCanary, 0o600)
+	valuePath := passphraseFileWith(t, testCanary, platform.PrivateFileMode)
 
 	// An empty vault says so rather than printing nothing.
 	code, stdout, stderr := v.run(t, "list")
@@ -212,7 +213,7 @@ func TestWrongPassphraseIsLockedNotCorrupt(t *testing.T) {
 	v := newTestVault(t)
 
 	code, stdout, stderr := runArgs(t,
-		"list", "--vault", v.dir, "--passphrase-file", passphraseFileWith(t, "wrong passphrase entirely", 0o600),
+		"list", "--vault", v.dir, "--passphrase-file", passphraseFileWith(t, "wrong passphrase entirely", platform.PrivateFileMode),
 	)
 	if code != ExitLocked {
 		t.Fatalf("exit = %d, want %d; stderr: %s", code, ExitLocked, stderr)

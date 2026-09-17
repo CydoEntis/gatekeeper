@@ -50,8 +50,8 @@ func newSyncCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&message, "message", "",
-		"commit message to use instead of the generated one")
+	cmd.Flags().StringVar(&message, flagMessage, "",
+		helpMessage)
 
 	return cmd
 }

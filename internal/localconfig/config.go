@@ -42,7 +42,7 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
-	data, err := os.ReadFile(path)
+	encoded, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return Config{}, nil
@@ -51,7 +51,7 @@ func Load() (Config, error) {
 	}
 
 	var c Config
-	if err := json.Unmarshal(data, &c); err != nil {
+	if err := json.Unmarshal(encoded, &c); err != nil {
 		return Config{}, fmt.Errorf("read local config %s: %w", path, err)
 	}
 	return c, nil
@@ -66,7 +66,7 @@ func Save(c Config) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), platform.PrivateDirMode); err != nil {
 		return fmt.Errorf("create config directory: %w", err)
 	}
 
@@ -78,7 +78,7 @@ func Save(c Config) error {
 
 	// Write-then-rename so a crash cannot leave a truncated config that would
 	// silently send later commands to the wrong vault.
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-config-*")
+	tmp, err := os.CreateTemp(filepath.Dir(path), platform.TempFilePrefix+"config-*")
 	if err != nil {
 		return fmt.Errorf("create temp config: %w", err)
 	}
@@ -88,7 +88,7 @@ func Save(c Config) error {
 		os.Remove(tmpName)
 	}()
 
-	if err := tmp.Chmod(0o600); err != nil {
+	if err := tmp.Chmod(platform.PrivateFileMode); err != nil {
 		return fmt.Errorf("set config permissions: %w", err)
 	}
 	if _, err := tmp.Write(payload); err != nil {

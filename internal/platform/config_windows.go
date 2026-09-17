@@ -20,5 +20,5 @@ func ConfigDir() (string, error) {
 	if base == "" {
 		return "", fmt.Errorf("LOCALAPPDATA is not set; cannot locate the per-user configuration directory")
 	}
-	return filepath.Join(base, "gatekeeper"), nil
+	return filepath.Join(base, AppDirName), nil
 }

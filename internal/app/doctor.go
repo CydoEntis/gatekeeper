@@ -18,6 +18,22 @@ import (
 // ErrUnhealthy reports that at least one diagnostic check failed.
 var ErrUnhealthy = errors.New("some checks failed")
 
+// Names of the checks doctor reports.
+//
+// They are stable identifiers as much as prose: the CLI renders them, and a test
+// asserts on them, so a reworded label in one place would be a silent break
+// somewhere else.
+const (
+	checkVaultSelected     = "vault selected"
+	checkVaultReadable     = "vault readable"
+	checkRecipients        = "recipients readable"
+	checkIdentityPresent   = "identity present"
+	checkIdentityProtected = "identity protected"
+	checkNoKeyMaterial     = "no key material in the vault"
+	checkIgnoreRules       = "vault has ignore rules"
+	checkNoFlags           = "no flagged variables"
+)
+
 // Check is one diagnostic result.
 type Check struct {
 	Name   string
@@ -70,39 +86,39 @@ func (a App) Doctor(ctx context.Context, vaultDir string, unlock VaultRef) (Doct
 	}
 
 	if vaultDir == "" {
-		add("vault selected", false, "no vault directory was given or configured")
+		add(checkVaultSelected, false, "no vault directory was given or configured")
 		return report, nil
 	}
 
 	manifest, err := vault.ReadManifest(vaultDir)
 	if err != nil {
-		add("vault readable", false, err.Error())
+		add(checkVaultReadable, false, err.Error())
 		// Everything below depends on knowing which vault this is, so stop here
 		// rather than reporting a cascade of consequences.
 		return report, nil
 	}
-	add("vault readable", true, fmt.Sprintf("%s (%s)", manifest.Name, manifest.VaultID))
+	add(checkVaultReadable, true, fmt.Sprintf("%s (%s)", manifest.Name, manifest.VaultID))
 
 	if devices, err := vault.ReadDevices(vaultDir); err != nil {
-		add("recipients readable", false, err.Error())
+		add(checkRecipients, false, err.Error())
 	} else {
-		add("recipients readable", true,
+		add(checkRecipients, true,
 			fmt.Sprintf("%d device recipient(s) plus an offline recovery recipient", len(devices.Devices)))
 	}
 
 	path, err := identity.Path(manifest.VaultID)
 	switch {
 	case err != nil:
-		add("identity present", false, err.Error())
+		add(checkIdentityPresent, false, err.Error())
 	default:
 		if _, statErr := os.Stat(path); statErr != nil {
-			add("identity present", false, "no local identity for this vault at "+path)
+			add(checkIdentityPresent, false, "no local identity for this vault at "+path)
 		} else {
-			add("identity present", true, path)
+			add(checkIdentityPresent, true, path)
 			if permErr := platform.CheckIdentityPerms(path); permErr != nil {
-				add("identity protected", false, permErr.Error())
+				add(checkIdentityProtected, false, permErr.Error())
 			} else {
-				add("identity protected", true, "encrypted at rest, and where it should be")
+				add(checkIdentityProtected, true, "encrypted at rest, and where it should be")
 			}
 		}
 	}
@@ -111,25 +127,25 @@ func (a App) Doctor(ctx context.Context, vaultDir string, unlock VaultRef) (Doct
 	findings, err := guard.Scan(vaultDir)
 	switch {
 	case err != nil:
-		add("no key material in the vault", false, err.Error())
+		add(checkNoKeyMaterial, false, err.Error())
 	case len(findings) > 0:
-		add("no key material in the vault", false,
+		add(checkNoKeyMaterial, false,
 			fmt.Sprintf("%d file(s), starting with %s", len(findings), findings[0].Path))
 	default:
-		add("no key material in the vault", true, "nothing that looks like a secret")
+		add(checkNoKeyMaterial, true, "nothing that looks like a secret")
 	}
 
 	if _, err := os.Stat(filepath.Join(vaultDir, vault.GitignoreFile)); err != nil {
-		add("vault has ignore rules", false,
+		add(checkIgnoreRules, false,
 			"no "+vault.GitignoreFile+" in the vault directory; a stray key could be committed")
 	} else {
-		add("vault has ignore rules", true, vault.GitignoreFile+" is present")
+		add(checkIgnoreRules, true, vault.GitignoreFile+" is present")
 	}
 
 	// Flagged variables live inside the encrypted payload, so this is the one
 	// check that needs the vault opened.
 	if unlock.Passphrase == "" && unlock.Identity == "" {
-		addSkipped("no flagged variables",
+		addSkipped(checkNoFlags,
 			"needs the vault unlocked; pass --passphrase-file to include it")
 		return report, nil
 	}
@@ -137,18 +153,18 @@ func (a App) Doctor(ctx context.Context, vaultDir string, unlock VaultRef) (Doct
 	unlock.Dir = vaultDir
 	opened, err := a.open(unlock)
 	if err != nil {
-		add("no flagged variables", false, err.Error())
+		add(checkNoFlags, false, err.Error())
 		return report, nil
 	}
 
 	flagged, err := flaggedVariables(ctx, opened)
 	switch {
 	case err != nil:
-		add("no flagged variables", false, err.Error())
+		add(checkNoFlags, false, err.Error())
 	case len(flagged) == 0:
-		add("no flagged variables", true, "nothing marked as exposed")
+		add(checkNoFlags, true, "nothing marked as exposed")
 	default:
-		add("no flagged variables", false,
+		add(checkNoFlags, false,
 			fmt.Sprintf("%d still flagged: %s", len(flagged), strings.Join(flagged, ", ")))
 	}
 

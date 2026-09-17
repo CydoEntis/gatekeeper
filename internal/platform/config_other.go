@@ -17,5 +17,5 @@ func ConfigDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(base, "gatekeeper"), nil
+	return filepath.Join(base, AppDirName), nil
 }

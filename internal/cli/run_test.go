@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"gatekeeper/internal/platform"
 	"os"
 	"strconv"
 	"strings"
@@ -254,7 +255,7 @@ func TestRunWrongPassphraseIsLocked(t *testing.T) {
 	code, _, stderr := runArgs(t,
 		"run", "demo",
 		"--vault", v.dir,
-		"--passphrase-file", passphraseFileWith(t, "wrong passphrase entirely", 0o600),
+		"--passphrase-file", passphraseFileWith(t, "wrong passphrase entirely", platform.PrivateFileMode),
 		"--", os.Args[0], "-test.run=^TestRunFixtureProcess$", "--",
 	)
 	if code != ExitLocked {

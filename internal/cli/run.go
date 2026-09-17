@@ -53,7 +53,7 @@ func newRunCmd() *cobra.Command {
 			profile, argv := args[0], args[1:]
 
 			if !vault.ValidProfileName(profile) {
-				return fmt.Errorf("%w: profile name %q", vault.ErrInvalidName, profile)
+				return vault.InvalidProfileName(profile)
 			}
 
 			dir, err := resolveVaultDir(cmd)
@@ -97,8 +97,7 @@ func newRunCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&passphraseFile, "passphrase-file", "",
-		"read the passphrase from this 0600 file instead of prompting")
+	addPassphraseFlag(cmd, &passphraseFile)
 
 	return cmd
 }

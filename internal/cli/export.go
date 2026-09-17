@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"gatekeeper/internal/app"
+	"gatekeeper/internal/platform"
 	"gatekeeper/internal/vault"
 )
 
@@ -40,7 +41,7 @@ func newExportCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			profile := args[0]
 			if !vault.ValidProfileName(profile) {
-				return fmt.Errorf("%w: profile name %q", vault.ErrInvalidName, profile)
+				return vault.InvalidProfileName(profile)
 			}
 
 			// Require an explicit destination. Printing secrets must never be
@@ -61,7 +62,7 @@ func newExportCmd() *cobra.Command {
 			}
 			unlock.Dir = dir
 
-			data, summary, err := app.New().Export(
+			contents, summary, err := app.New().Export(
 				cmd.Context(),
 				unlock,
 				app.ExportRequest{Profile: profile},
@@ -77,7 +78,7 @@ func newExportCmd() *cobra.Command {
 					"warning: printing %d variable(s) from %s to standard output.\n"+
 						"         Your terminal's scrollback, a log, or a screen recording may\n"+
 						"         keep a copy.\n", len(summary.Vars), summary.Name)
-				if _, err := cmd.OutOrStdout().Write(data); err != nil {
+				if _, err := cmd.OutOrStdout().Write(contents); err != nil {
 					return fmt.Errorf("write profile to standard output: %w", err)
 				}
 				return nil
@@ -89,7 +90,7 @@ func newExportCmd() *cobra.Command {
 					app.ErrUsage, output)
 			}
 
-			if err := writePlaintext(output, data); err != nil {
+			if err := writePlaintext(output, contents); err != nil {
 				return err
 			}
 
@@ -102,14 +103,13 @@ func newExportCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&passphraseFile, "passphrase-file", "",
-		"read the passphrase from this 0600 file instead of prompting")
-	cmd.Flags().StringVar(&output, "output", "",
-		"write the plaintext dotenv file here")
-	cmd.Flags().BoolVar(&toStdout, "stdout", false,
-		"print the secrets to standard output instead of a file (dangerous)")
-	cmd.Flags().BoolVar(&force, "force", false,
-		"overwrite --output if it already exists")
+	addPassphraseFlag(cmd, &passphraseFile)
+	cmd.Flags().StringVar(&output, flagOutput, "",
+		helpOutput)
+	cmd.Flags().BoolVar(&toStdout, flagStdout, false,
+		helpStdout)
+	cmd.Flags().BoolVar(&force, flagForce, false,
+		helpForce)
 
 	return cmd
 }
@@ -118,12 +118,12 @@ func newExportCmd() *cobra.Command {
 //
 // The mode is set explicitly after writing as well as at creation, because
 // O_CREATE does not tighten the permissions of a file that already exists.
-func writePlaintext(path string, data []byte) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+func writePlaintext(path string, contents []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, platform.PrivateFileMode)
 	if err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
-	if _, err := f.Write(data); err != nil {
+	if _, err := f.Write(contents); err != nil {
 		f.Close()
 		return fmt.Errorf("write %s: %w", path, err)
 	}
@@ -134,7 +134,7 @@ func writePlaintext(path string, data []byte) error {
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("close %s: %w", path, err)
 	}
-	if err := os.Chmod(path, 0o600); err != nil {
+	if err := os.Chmod(path, platform.PrivateFileMode); err != nil {
 		return fmt.Errorf("restrict %s: %w", path, err)
 	}
 	return nil

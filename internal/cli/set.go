@@ -89,10 +89,9 @@ func newSetCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&passphraseFile, "passphrase-file", "",
-		"read the passphrase from this 0600 file instead of prompting")
-	cmd.Flags().StringVar(&valueFile, "value-file", "",
-		"read the value from this 0600 file instead of prompting")
+	addPassphraseFlag(cmd, &passphraseFile)
+	cmd.Flags().StringVar(&valueFile, flagValueFile, "",
+		helpValueFile)
 
 	return cmd
 }
@@ -107,13 +106,13 @@ func readValue(w io.Writer, key, file string) (string, error) {
 		if err := platform.CheckSecretFilePerms(file); err != nil {
 			return "", err
 		}
-		data, err := os.ReadFile(file)
+		contents, err := os.ReadFile(file)
 		if err != nil {
 			return "", fmt.Errorf("read value file: %w", err)
 		}
 		// Only line endings are trimmed. A value is otherwise taken exactly as
 		// written, which matters for keys that legitimately end in whitespace.
-		return strings.TrimRight(string(data), "\r\n"), nil
+		return strings.TrimRight(string(contents), "\r\n"), nil
 	}
 
 	if !isTerminal(os.Stdin) {

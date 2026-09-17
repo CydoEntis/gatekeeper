@@ -1,4 +1,4 @@
-// Package dotenv parses dotenv files as data.
+// Package dotenv parses dotenv files as raw.
 //
 // The single most important property of this package: **parsing never evaluates
 // anything.** There is no variable expansion, no command substitution, no
@@ -59,18 +59,18 @@ type Pair struct {
 // Deliberately NOT supported: `$VAR` expansion, `$(command)`, backticks, and any
 // other evaluation. See the package comment.
 func Parse(r io.Reader) ([]Pair, error) {
-	data, err := io.ReadAll(io.LimitReader(r, MaxSize+1))
+	raw, err := io.ReadAll(io.LimitReader(r, MaxSize+1))
 	if err != nil {
 		return nil, fmt.Errorf("read dotenv: %w", err)
 	}
-	if len(data) > MaxSize {
+	if len(raw) > MaxSize {
 		return nil, fmt.Errorf("dotenv file is larger than %d bytes", MaxSize)
 	}
 
 	// Normalise line endings before anything else. Most of these files come from
 	// Windows, and a stray carriage return would otherwise end up inside a value
 	// — where it is invisible and breaks whatever reads it next.
-	text := strings.ReplaceAll(string(data), "\r\n", "\n")
+	text := strings.ReplaceAll(string(raw), "\r\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "\n")
 	lines := strings.Split(text, "\n")
 

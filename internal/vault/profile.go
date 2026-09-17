@@ -61,17 +61,31 @@ type Flag struct {
 	At   time.Time `json:"at"`
 }
 
+// InvalidProfileName reports a profile name outside the portable subset.
+//
+// A named constructor rather than the format string at each call site: the
+// message appears in a dozen places, and one caller phrasing it differently would
+// be a quiet inconsistency in the only thing a user sees when they typo.
+func InvalidProfileName(name string) error {
+	return fmt.Errorf("%w: profile name %q", ErrInvalidName, name)
+}
+
+// InvalidVariableName reports a variable name outside the portable subset.
+func InvalidVariableName(name string) error {
+	return fmt.Errorf("%w: variable name %q", ErrInvalidName, name)
+}
+
 // Validate enforces every rule that must hold before a profile is encrypted.
 func (p Profile) Validate() error {
 	if p.Format != FormatVersion {
 		return fmt.Errorf("%w: got %d, want %d", ErrUnsupportedFormat, p.Format, FormatVersion)
 	}
 	if !profileNameRE.MatchString(p.Name) {
-		return fmt.Errorf("%w: profile name %q", ErrInvalidName, p.Name)
+		return InvalidProfileName(p.Name)
 	}
 	for k, v := range p.Variables {
 		if !varNameRE.MatchString(k) {
-			return fmt.Errorf("%w: variable name %q", ErrInvalidName, k)
+			return InvalidVariableName(k)
 		}
 		// NUL cannot be represented in a process environment on any platform.
 		if bytes.IndexByte([]byte(v), 0) >= 0 {

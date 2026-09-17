@@ -126,10 +126,10 @@ func (a App) Set(ctx context.Context, ref VaultRef, req SetRequest) (ChangeResul
 	// Name checks are pure string work and happen before the vault is unlocked,
 	// so a typo costs the user nothing.
 	if !vault.ValidProfileName(req.Profile) {
-		return ChangeResult{}, fmt.Errorf("%w: profile name %q", vault.ErrInvalidName, req.Profile)
+		return ChangeResult{}, vault.InvalidProfileName(req.Profile)
 	}
 	if !vault.ValidVariableName(req.Key) {
-		return ChangeResult{}, fmt.Errorf("%w: variable name %q", vault.ErrInvalidName, req.Key)
+		return ChangeResult{}, vault.InvalidVariableName(req.Key)
 	}
 
 	v, err := a.open(ref)
@@ -195,10 +195,10 @@ func (a App) Flag(ctx context.Context, ref VaultRef, req FlagRequest) (vault.Sum
 		return vault.Summary{}, err
 	}
 	if !vault.ValidProfileName(req.Profile) {
-		return vault.Summary{}, fmt.Errorf("%w: profile name %q", vault.ErrInvalidName, req.Profile)
+		return vault.Summary{}, vault.InvalidProfileName(req.Profile)
 	}
 	if !vault.ValidVariableName(req.Key) {
-		return vault.Summary{}, fmt.Errorf("%w: variable name %q", vault.ErrInvalidName, req.Key)
+		return vault.Summary{}, vault.InvalidVariableName(req.Key)
 	}
 
 	v, err := a.open(ref)
@@ -227,10 +227,10 @@ func (a App) Unflag(ctx context.Context, ref VaultRef, profile, key string) (vau
 		return vault.Summary{}, err
 	}
 	if !vault.ValidProfileName(profile) {
-		return vault.Summary{}, fmt.Errorf("%w: profile name %q", vault.ErrInvalidName, profile)
+		return vault.Summary{}, vault.InvalidProfileName(profile)
 	}
 	if !vault.ValidVariableName(key) {
-		return vault.Summary{}, fmt.Errorf("%w: variable name %q", vault.ErrInvalidName, key)
+		return vault.Summary{}, vault.InvalidVariableName(key)
 	}
 
 	v, err := a.open(ref)
@@ -271,7 +271,7 @@ func (a App) List(ctx context.Context, ref VaultRef, profile string) (vault.Summ
 		return vault.Summary{}, err
 	}
 	if !vault.ValidProfileName(profile) {
-		return vault.Summary{}, fmt.Errorf("%w: profile name %q", vault.ErrInvalidName, profile)
+		return vault.Summary{}, vault.InvalidProfileName(profile)
 	}
 
 	v, err := a.open(ref)
@@ -311,7 +311,7 @@ func (a App) Environment(ctx context.Context, ref VaultRef, profile string) (Pro
 		return nil, err
 	}
 	if !vault.ValidProfileName(profile) {
-		return nil, fmt.Errorf("%w: profile name %q", vault.ErrInvalidName, profile)
+		return nil, vault.InvalidProfileName(profile)
 	}
 
 	v, err := a.open(ref)

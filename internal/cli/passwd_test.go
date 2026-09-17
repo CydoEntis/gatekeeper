@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"gatekeeper/internal/platform"
 	"strings"
 	"testing"
 )
@@ -15,7 +16,7 @@ func TestPasswdChangesThePassphrase(t *testing.T) {
 		t.Fatalf("seeding: %s", stderr)
 	}
 
-	newPass := passphraseFileWith(t, newTestPassphrase, 0o600)
+	newPass := passphraseFileWith(t, newTestPassphrase, platform.PrivateFileMode)
 	code, stdout, stderr := v.run(t, "passwd", "--new-passphrase-file", newPass)
 	if code != ExitOK {
 		t.Fatalf("passwd exited %d; stderr: %s", code, stderr)
@@ -48,8 +49,8 @@ func TestPasswdChangesThePassphrase(t *testing.T) {
 func TestPasswdNeedsTheCurrentPassphrase(t *testing.T) {
 	v := newTestVault(t)
 
-	wrong := passphraseFileWith(t, "not the current passphrase", 0o600)
-	newPass := passphraseFileWith(t, newTestPassphrase, 0o600)
+	wrong := passphraseFileWith(t, "not the current passphrase", platform.PrivateFileMode)
+	newPass := passphraseFileWith(t, newTestPassphrase, platform.PrivateFileMode)
 
 	code, _, stderr := runArgs(t, "passwd",
 		"--vault", v.dir,
@@ -87,7 +88,7 @@ func TestPasswdRefusesTheSamePassphrase(t *testing.T) {
 func TestPasswdRefusesAWeakReplacement(t *testing.T) {
 	v := newTestVault(t)
 
-	weak := passphraseFileWith(t, "short", 0o600)
+	weak := passphraseFileWith(t, "short", platform.PrivateFileMode)
 	code, _, stderr := v.run(t, "passwd", "--new-passphrase-file", weak)
 	if code != ExitUsage {
 		t.Fatalf("exit = %d, want %d; stderr: %s", code, ExitUsage, stderr)

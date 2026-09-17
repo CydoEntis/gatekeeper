@@ -17,6 +17,10 @@ const (
 	ManifestFile = "manifest.json"
 	DevicesFile  = "devices.json"
 	ProfilesDir  = "profiles"
+	// ProfileFileExt is the extension of an encrypted profile. It is exported
+	// because the Git adapter has to tell profiles from metadata when it builds a
+	// commit message.
+	ProfileFileExt = ".age"
 )
 
 // Manifest is plaintext metadata. It holds no secrets, and is safe to commit.
@@ -54,11 +58,14 @@ type Devices struct {
 // depth rather than the primary control: it is what stops a stray copy, a
 // plaintext export, or a half-written temp file from being committed by
 // `git add -A` in a moment of inattention.
-const vaultGitignore = `# Written by Gatekeeper. Private keys must never be committed.
+//
+// The temp pattern is built from platform.TempFilePrefix rather than written out,
+// because those two must agree. A temp file the ignore rules miss is an encrypted
+// fragment committed by accident, and the mistake would be invisible.
+var vaultGitignore = `# Written by Gatekeeper. Private keys must never be committed.
 *.key
 identities/
-*.tmp
-.tmp-*
+` + platform.TempFilePrefix + `*
 .env
 .env.*
 !.env.example
@@ -75,7 +82,7 @@ func WriteGitignore(dir string) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	}
-	if err := os.WriteFile(path, []byte(vaultGitignore), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(vaultGitignore), platform.PrivateFileMode); err != nil {
 		return fmt.Errorf("write vault .gitignore: %w", err)
 	}
 	return nil
@@ -86,7 +93,7 @@ var ErrNotVault = errors.New("directory is not an Gatekeeper vault")
 
 // ReadManifest loads and validates a vault's manifest.
 func ReadManifest(dir string) (Manifest, error) {
-	data, err := os.ReadFile(filepath.Join(dir, ManifestFile))
+	encoded, err := os.ReadFile(filepath.Join(dir, ManifestFile))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return Manifest{}, fmt.Errorf("%w: no %s in %s", ErrNotVault, ManifestFile, dir)
@@ -95,7 +102,7 @@ func ReadManifest(dir string) (Manifest, error) {
 	}
 
 	var m Manifest
-	if err := strictUnmarshal(data, &m); err != nil {
+	if err := strictUnmarshal(encoded, &m); err != nil {
 		return Manifest{}, fmt.Errorf("read manifest: %w", err)
 	}
 	if m.Format != FormatVersion {
@@ -106,7 +113,7 @@ func ReadManifest(dir string) (Manifest, error) {
 
 // ReadDevices loads the recipient set.
 func ReadDevices(dir string) (Devices, error) {
-	data, err := os.ReadFile(filepath.Join(dir, DevicesFile))
+	encoded, err := os.ReadFile(filepath.Join(dir, DevicesFile))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return Devices{}, fmt.Errorf("%w: no %s in %s", ErrNotVault, DevicesFile, dir)
@@ -115,7 +122,7 @@ func ReadDevices(dir string) (Devices, error) {
 	}
 
 	var d Devices
-	if err := strictUnmarshal(data, &d); err != nil {
+	if err := strictUnmarshal(encoded, &d); err != nil {
 		return Devices{}, fmt.Errorf("read devices: %w", err)
 	}
 	if d.Format != FormatVersion {
@@ -146,7 +153,7 @@ func writeJSONAtomic(dir, name string, v any) error {
 	}
 	payload = append(payload, '\n')
 
-	tmp, err := os.CreateTemp(dir, ".tmp-*.json")
+	tmp, err := os.CreateTemp(dir, platform.TempFilePrefix+"*.json")
 	if err != nil {
 		return fmt.Errorf("create temp %s: %w", name, err)
 	}
@@ -156,7 +163,7 @@ func writeJSONAtomic(dir, name string, v any) error {
 		os.Remove(tmpName)
 	}()
 
-	if err := tmp.Chmod(0o600); err != nil {
+	if err := tmp.Chmod(platform.PrivateFileMode); err != nil {
 		return fmt.Errorf("set temp permissions: %w", err)
 	}
 	if _, err := tmp.Write(payload); err != nil {
@@ -176,8 +183,8 @@ func writeJSONAtomic(dir, name string, v any) error {
 
 // strictUnmarshal rejects unknown fields and trailing content, matching the
 // decoding rules applied to encrypted profiles.
-func strictUnmarshal(data []byte, v any) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
+func strictUnmarshal(encoded []byte, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(encoded))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		return err

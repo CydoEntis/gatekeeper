@@ -45,12 +45,12 @@ func newDoctorCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVar(&preCommit, "pre-commit", false,
-		"scan a directory for secrets that must not be committed")
-	cmd.Flags().StringVar(&path, "path", ".",
-		"directory to scan with --pre-commit")
-	cmd.Flags().StringVar(&passphraseFile, "passphrase-file", "",
-		"unlock the vault to include the flagged-variable check; optional, because doctor never prompts")
+	cmd.Flags().BoolVar(&preCommit, flagPreCommit, false,
+		helpPreCommit)
+	cmd.Flags().StringVar(&path, flagPath, ".",
+		helpPath)
+	cmd.Flags().StringVar(&passphraseFile, flagPassphraseFile, "",
+		helpPassphraseFileOption)
 
 	return cmd
 }
@@ -103,7 +103,7 @@ func runDoctor(cmd *cobra.Command) error {
 // not open. Returning an empty ref means "checks that need the vault decrypted
 // will be skipped", not "no vault".
 func optionalUnlock(cmd *cobra.Command) (app.VaultRef, error) {
-	identityPath, err := cmd.Flags().GetString("identity")
+	identityPath, err := cmd.Flags().GetString(flagIdentity)
 	if err != nil {
 		return app.VaultRef{}, err
 	}
@@ -115,7 +115,7 @@ func optionalUnlock(cmd *cobra.Command) (app.VaultRef, error) {
 		return app.VaultRef{Identity: private}, nil
 	}
 
-	passphraseFile, err := cmd.Flags().GetString("passphrase-file")
+	passphraseFile, err := cmd.Flags().GetString(flagPassphraseFile)
 	if err != nil {
 		return app.VaultRef{}, err
 	}

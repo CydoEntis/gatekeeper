@@ -37,6 +37,20 @@ const (
 	WarnPassphraseLen = 20
 )
 
+// Names of the things this package owns.
+const (
+	// identitiesDirName is the directory under the per-user config directory that
+	// holds private keys, one file per vault.
+	identitiesDirName = "identities"
+
+	// identityFileExt is the extension of a private identity file.
+	//
+	// It carries weight beyond tidiness: the commit guard treats this extension as
+	// a reason to stop, because a passphrase-encrypted key has no readable content
+	// to detect. The two must agree, which is why this is named.
+	identityFileExt = ".key"
+)
+
 var (
 	// ErrNotFound reports that no local identity exists for a vault.
 	ErrNotFound = errors.New("no local identity for this vault")
@@ -94,7 +108,7 @@ func Path(vaultID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "identities", vaultID+".key"), nil
+	return filepath.Join(dir, identitiesDirName, vaultID+identityFileExt), nil
 }
 
 // Dir returns the directory holding all local identities.
@@ -103,7 +117,7 @@ func Dir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "identities"), nil
+	return filepath.Join(dir, identitiesDirName), nil
 }
 
 // Save writes a private identity, encrypted under a passphrase, and refuses to
@@ -172,7 +186,7 @@ func write(id Identity, passphrase string) (string, error) {
 	}
 
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := os.MkdirAll(dir, platform.PrivateDirMode); err != nil {
 		return "", fmt.Errorf("create identity directory: %w", err)
 	}
 
@@ -183,7 +197,7 @@ func write(id Identity, passphrase string) (string, error) {
 
 	// The temporary file holds ciphertext, so a leftover from a crash is not a
 	// plaintext exposure.
-	tmp, err := os.CreateTemp(dir, ".tmp-identity-*")
+	tmp, err := os.CreateTemp(dir, platform.TempFilePrefix+"identity-*")
 	if err != nil {
 		return "", fmt.Errorf("create temporary identity: %w", err)
 	}
@@ -193,7 +207,7 @@ func write(id Identity, passphrase string) (string, error) {
 		os.Remove(tmpName)
 	}()
 
-	if err := tmp.Chmod(0o600); err != nil {
+	if err := tmp.Chmod(platform.PrivateFileMode); err != nil {
 		return "", fmt.Errorf("set identity permissions: %w", err)
 	}
 	if _, err := tmp.Write(sealed); err != nil {
@@ -278,12 +292,12 @@ func ReadRawPrivateKey(path string) (string, error) {
 		return "", err
 	}
 
-	data, err := os.ReadFile(path)
+	sealed, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("read identity: %w", err)
 	}
 
-	private := strings.TrimSpace(string(data))
+	private := strings.TrimSpace(string(sealed))
 	if _, err := envelope.RecipientOf(private); err != nil {
 		return "", fmt.Errorf("%s is not a usable age private key: %w", path, err)
 	}
@@ -303,7 +317,7 @@ func WriteRecovery(path string, private string) error {
 		return errors.New("no recovery destination given")
 	}
 
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, platform.PrivateFileMode)
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return fmt.Errorf("refusing to overwrite existing file %s", path)

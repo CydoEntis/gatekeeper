@@ -42,60 +42,80 @@ const (
 	ExitExternal   = 8
 )
 
-// ExitCode maps a typed error to a stable process exit code.
-func ExitCode(err error) int {
-	switch {
-	case err == nil:
-		return ExitOK
-
-	case errors.Is(err, app.ErrUsage),
-		errors.Is(err, app.ErrAlreadyInitialized),
-		errors.Is(err, app.ErrRecoveryUndeliverable),
-		errors.Is(err, vault.ErrInvalidName),
-		errors.Is(err, vault.ErrInvalidValue),
-		errors.Is(err, vault.ErrAlreadyExists),
-		errors.Is(err, identity.ErrWeakPassphrase),
-		errors.Is(err, identity.ErrExists):
-		return ExitUsage
-
-	case errors.Is(err, vault.ErrNotFound),
-		errors.Is(err, identity.ErrNotFound):
-		return ExitNotFound
-
+// exitCodeGroups maps typed errors to the exit codes ARCHITECTURE.md section 9
+// documents, in the order it lists them.
+//
+// A table rather than a switch, because this is a published contract: a caller
+// writing a script branches on these numbers, and the mapping should be readable
+// as the table it is. The first group containing a match wins, so the order here
+// is the precedence.
+var exitCodeGroups = []struct {
+	code  int
+	cause []error
+}{
+	{ExitUsage, []error{
+		app.ErrUsage,
+		app.ErrAlreadyInitialized,
+		app.ErrRecoveryUndeliverable,
+		vault.ErrInvalidName,
+		vault.ErrInvalidValue,
+		vault.ErrAlreadyExists,
+		identity.ErrWeakPassphrase,
+		identity.ErrExists,
+	}},
+	{ExitNotFound, []error{
+		vault.ErrNotFound,
+		identity.ErrNotFound,
+	}},
 	// A wrong passphrase is a locked vault, not a corrupt one: the ciphertext is
-	// intact and the caller simply cannot open it.
-	case errors.Is(err, vault.ErrLocked),
-		errors.Is(err, identity.ErrWrongPassphrase):
-		return ExitLocked
-
-	case errors.Is(err, vault.ErrConflict),
-		errors.Is(err, app.ErrCollision),
-		errors.Is(err, gitsync.ErrMergeConflict):
-		return ExitConflict
-
-	case errors.Is(err, vault.ErrUnsupportedFormat),
-		errors.Is(err, vault.ErrDuplicateKey),
-		errors.Is(err, vault.ErrTrailingContent),
-		errors.Is(err, vault.ErrNameMismatch),
-		errors.Is(err, vault.ErrNotVault),
-		errors.Is(err, envelope.ErrNotDecryptable),
-		errors.Is(err, envelope.ErrBadIdentity):
-		return ExitIntegrity
-
-	case errors.Is(err, platform.ErrUnsafePerm),
-		errors.Is(err, guard.ErrKeyMaterialFound):
-		return ExitPermission
-
+	// intact, and the caller simply cannot open it.
+	{ExitLocked, []error{
+		vault.ErrLocked,
+		identity.ErrWrongPassphrase,
+	}},
+	{ExitConflict, []error{
+		vault.ErrConflict,
+		app.ErrCollision,
+		gitsync.ErrMergeConflict,
+	}},
+	{ExitIntegrity, []error{
+		vault.ErrUnsupportedFormat,
+		vault.ErrDuplicateKey,
+		vault.ErrTrailingContent,
+		vault.ErrNameMismatch,
+		vault.ErrNotVault,
+		envelope.ErrNotDecryptable,
+		envelope.ErrBadIdentity,
+	}},
+	{ExitPermission, []error{
+		platform.ErrUnsafePerm,
+		guard.ErrKeyMaterialFound,
+	}},
 	// A command that could not be started is an environment problem, not a
 	// Gatekeeper problem.
-	case errors.Is(err, runner.ErrExecutableNotFound),
-		errors.Is(err, gitsync.ErrNotARepository),
-		errors.Is(err, gitsync.ErrGitMissing):
-		return ExitExternal
+	{ExitExternal, []error{
+		runner.ErrExecutableNotFound,
+		gitsync.ErrNotARepository,
+		gitsync.ErrGitMissing,
+	}},
+}
 
-	default:
-		return ExitFailure
+// ExitCode maps a typed error to a stable process exit code.
+//
+// An error matching no group is ExitFailure: an unclassified problem the user
+// cannot act on, which is deliberately different from every code above.
+func ExitCode(err error) int {
+	if err == nil {
+		return ExitOK
 	}
+	for _, group := range exitCodeGroups {
+		for _, cause := range group.cause {
+			if errors.Is(err, cause) {
+				return group.code
+			}
+		}
+	}
+	return ExitFailure
 }
 
 // Execute runs the CLI and returns the process exit code.
@@ -137,7 +157,7 @@ func ExecuteWith(args []string, stdout, stderr io.Writer) int {
 
 		// SilenceErrors is set on the root, so this is the only place the error
 		// is rendered. Errors never contain secret values.
-		fmt.Fprintf(stderr, "gk: %v\n", err)
+		fmt.Fprintf(stderr, errorPrefix+"%v\n", err)
 		return ExitCode(err)
 	}
 	return ExitOK
@@ -164,10 +184,10 @@ func newRootCmd() *cobra.Command {
 		},
 	}
 
-	root.PersistentFlags().StringVar(&vaultDir, "vault", "",
-		"vault directory (defaults to $GK_VAULT, then the configured default)")
-	root.PersistentFlags().StringVar(&identityPath, "identity", "",
-		"open the vault with this raw age private key instead of the local identity (the recovery path)")
+	root.PersistentFlags().StringVar(&vaultDir, flagVault, "",
+		helpVault)
+	root.PersistentFlags().StringVar(&identityPath, flagIdentity, "",
+		helpIdentity)
 
 	// Without this, an unknown or malformed flag surfaces as a plain error and
 	// would be reported as an internal failure (exit 1) instead of a usage error
@@ -195,18 +215,29 @@ func newRootCmd() *cobra.Command {
 
 // resolveVaultDir finds the vault a command should operate on.
 //
-// Three sources, in order: the --vault flag, the GK_VAULT environment
-// variable, then the machine-local default recorded by `init`. Explicit wins, so
-// a work and a personal vault can coexist and be selected per invocation.
+// EnvVault names the environment variable that selects a vault.
+//
+// It is part of the command's interface, so it is named once rather than typed
+// into both the lookup and the help text, where the two could drift apart.
+const EnvVault = "GK_VAULT"
+
+// errorPrefix labels every message the CLI writes to standard error.
+const errorPrefix = "gk: "
+
+// resolveVaultDir finds the vault a command should operate on.
+//
+// Three sources, in order: the --vault flag, the GK_VAULT environment variable,
+// then the machine-local default recorded by `init` or `use`. Explicit wins, so a
+// work and a personal vault can coexist and be selected per invocation.
 func resolveVaultDir(cmd *cobra.Command) (string, error) {
-	flagValue, err := cmd.Flags().GetString("vault")
+	flagValue, err := cmd.Flags().GetString(flagVault)
 	if err != nil {
 		return "", err
 	}
 	if flagValue != "" {
 		return filepath.Abs(flagValue)
 	}
-	if env := os.Getenv("GK_VAULT"); env != "" {
+	if env := os.Getenv(EnvVault); env != "" {
 		return filepath.Abs(env)
 	}
 

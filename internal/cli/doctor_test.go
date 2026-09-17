@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"gatekeeper/internal/platform"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,10 +98,10 @@ func TestDoctorPreCommitRefusesSecrets(t *testing.T) {
 	dir := t.TempDir()
 	// A dotenv file and an identity-shaped file, as a careless `git add -A` would
 	// sweep up.
-	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("SECRET=value\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("SECRET=value\n"), platform.PrivateFileMode); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "deploy.key"), []byte("opaque\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "deploy.key"), []byte("opaque\n"), platform.PrivateFileMode); err != nil {
 		t.Fatal(err)
 	}
 
@@ -123,10 +124,10 @@ func TestDoctorPreCommitRefusesSecrets(t *testing.T) {
 
 func TestDoctorPreCommitPassesACleanDirectory(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Clean\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Clean\n"), platform.PrivateFileMode); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".env.example"), []byte("A=\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".env.example"), []byte("A=\n"), platform.PrivateFileMode); err != nil {
 		t.Fatal(err)
 	}
 

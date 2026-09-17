@@ -43,7 +43,7 @@ func CheckIdentityPerms(path string) error {
 	if err != nil {
 		return err
 	}
-	if perm := fi.Mode().Perm(); perm&0o077 != 0 {
+	if perm := fi.Mode().Perm(); perm&GroupOrOtherBits != 0 {
 		return fmt.Errorf("%w: identity %s has permissions %04o; want 0600 (try: chmod 600 %s)",
 			ErrUnsafePerm, path, perm, path)
 	}
@@ -58,7 +58,7 @@ func CheckSecretFilePerms(path string) error {
 	if err != nil {
 		return err
 	}
-	if perm := fi.Mode().Perm(); perm&0o077 != 0 {
+	if perm := fi.Mode().Perm(); perm&GroupOrOtherBits != 0 {
 		return fmt.Errorf("%w: %s is readable by others (%04o); want 0600 (try: chmod 600 %s)",
 			ErrUnsafePerm, path, perm, path)
 	}

@@ -63,7 +63,7 @@ func (a App) Import(ctx context.Context, ref VaultRef, req ImportRequest) (Impor
 		return ImportResult{}, err
 	}
 	if !vault.ValidProfileName(req.Profile) {
-		return ImportResult{}, fmt.Errorf("%w: profile name %q", vault.ErrInvalidName, req.Profile)
+		return ImportResult{}, vault.InvalidProfileName(req.Profile)
 	}
 	if len(req.Pairs) == 0 {
 		return ImportResult{}, fmt.Errorf("%w: the file contained no variables", ErrUsage)
@@ -158,7 +158,7 @@ func (a App) Export(ctx context.Context, ref VaultRef, req ExportRequest) ([]byt
 		return nil, vault.Summary{}, err
 	}
 	if !vault.ValidProfileName(req.Profile) {
-		return nil, vault.Summary{}, fmt.Errorf("%w: profile name %q", vault.ErrInvalidName, req.Profile)
+		return nil, vault.Summary{}, vault.InvalidProfileName(req.Profile)
 	}
 
 	v, err := a.open(ref)

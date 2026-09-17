@@ -38,7 +38,7 @@ func newInitCmd() *cobra.Command {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			dir, err := cmd.Flags().GetString("vault")
+			dir, err := cmd.Flags().GetString(flagVault)
 			if err != nil {
 				return err
 			}
@@ -74,16 +74,15 @@ func newInitCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&name, "name", "personal",
-		"label for this vault, for example personal or work")
-	cmd.Flags().StringVar(&deviceName, "device-name", "",
-		"label for the recipient identity (defaults to the vault name)")
-	cmd.Flags().StringVar(&recoveryOut, "recovery-out", "",
-		"write the offline recovery identity to this file instead of printing it")
-	cmd.Flags().StringVar(&passphraseFile, "passphrase-file", "",
-		"read the passphrase from this 0600 file instead of prompting")
-	cmd.Flags().BoolVar(&noDefault, "no-default", false,
-		"do not record this vault as the machine-local default")
+	cmd.Flags().StringVar(&name, flagName, app.DefaultVaultName,
+		helpName)
+	cmd.Flags().StringVar(&deviceName, flagDeviceName, "",
+		helpDeviceName)
+	cmd.Flags().StringVar(&recoveryOut, flagRecoveryOut, "",
+		helpRecoveryOut)
+	addPassphraseFlag(cmd, &passphraseFile)
+	cmd.Flags().BoolVar(&noDefault, flagNoDefault, false,
+		helpNoDefault)
 
 	return cmd
 }

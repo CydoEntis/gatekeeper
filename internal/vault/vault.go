@@ -51,7 +51,7 @@ func (v *FileVault) profilesDir() string {
 }
 
 func (v *FileVault) path(name string) string {
-	return filepath.Join(v.profilesDir(), name+".age")
+	return filepath.Join(v.profilesDir(), name+ProfileFileExt)
 }
 
 func (v *FileVault) now() time.Time {
@@ -85,10 +85,10 @@ func (v *FileVault) List(ctx context.Context) ([]Summary, error) {
 
 	var out []Summary
 	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".age" {
+		if e.IsDir() || filepath.Ext(e.Name()) != ProfileFileExt {
 			continue
 		}
-		name := e.Name()[:len(e.Name())-len(".age")]
+		name := e.Name()[:len(e.Name())-len(ProfileFileExt)]
 		p, err := v.Read(ctx, name)
 		if err != nil {
 			return nil, err
@@ -101,7 +101,7 @@ func (v *FileVault) List(ctx context.Context) ([]Summary, error) {
 // Read decrypts and validates one profile.
 func (v *FileVault) Read(ctx context.Context, name string) (Profile, error) {
 	if !profileNameRE.MatchString(name) {
-		return Profile{}, fmt.Errorf("%w: profile name %q", ErrInvalidName, name)
+		return Profile{}, InvalidProfileName(name)
 	}
 
 	f, err := os.Open(v.path(name))
@@ -137,7 +137,7 @@ func (v *FileVault) Read(ctx context.Context, name string) (Profile, error) {
 // Create writes a new profile and refuses to overwrite an existing one.
 func (v *FileVault) Create(ctx context.Context, name string, vars map[string]string) (Summary, error) {
 	if !profileNameRE.MatchString(name) {
-		return Summary{}, fmt.Errorf("%w: profile name %q", ErrInvalidName, name)
+		return Summary{}, InvalidProfileName(name)
 	}
 	if _, err := os.Stat(v.path(name)); err == nil {
 		return Summary{}, fmt.Errorf("%w: %s", ErrAlreadyExists, name)
@@ -206,14 +206,14 @@ func (v *FileVault) writeAtomic(p Profile) error {
 	dir := v.profilesDir()
 	// Ensure the directory exists, so a FileVault constructed directly -- as the
 	// spike and the tests do -- behaves the same as one built by Open.
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := os.MkdirAll(dir, platform.PrivateDirMode); err != nil {
 		return fmt.Errorf("create profiles directory: %w", err)
 	}
 
 	// The temp file lives in the same directory as the destination on purpose: a
 	// cross-volume rename is a copy, which is not atomic and can leave a
 	// half-written profile.
-	tmp, err := os.CreateTemp(dir, ".tmp-*.age")
+	tmp, err := os.CreateTemp(dir, platform.TempFilePrefix+"*.age")
 	if err != nil {
 		return fmt.Errorf("create temp profile: %w", err)
 	}
@@ -227,7 +227,7 @@ func (v *FileVault) writeAtomic(p Profile) error {
 
 	// Plaintext never touches this file, but the ciphertext is still restricted
 	// so a partially written profile is not readable by other local users.
-	if err := tmp.Chmod(0o600); err != nil {
+	if err := tmp.Chmod(platform.PrivateFileMode); err != nil {
 		return fmt.Errorf("set temp permissions: %w", err)
 	}
 

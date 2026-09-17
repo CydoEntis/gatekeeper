@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"gatekeeper/internal/platform"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,7 +42,7 @@ func TestFlagShowsUpUntilTheValueIsReplaced(t *testing.T) {
 	}
 
 	// Replacing the value clears it: a new value is the rotation.
-	replacement := passphraseFileWith(t, "sk-live-rotated-value", 0o600)
+	replacement := passphraseFileWith(t, "sk-live-rotated-value", platform.PrivateFileMode)
 	code, _, stderr = v.run(t, "set", "demo", "OPENAI_API_KEY", "--value-file", replacement)
 	if code != ExitOK {
 		t.Fatalf("set exited %d; stderr: %s", code, stderr)
@@ -69,7 +70,7 @@ func TestReEnteringTheSameValueKeepsTheFlag(t *testing.T) {
 	}
 
 	// Set the *same* value again.
-	same := passphraseFileWith(t, testCanary, 0o600)
+	same := passphraseFileWith(t, testCanary, platform.PrivateFileMode)
 	if code, _, stderr := v.run(t, "set", "demo", "OPENAI_API_KEY", "--value-file", same); code != ExitOK {
 		t.Fatalf("set: %s", stderr)
 	}

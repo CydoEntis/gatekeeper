@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"gatekeeper/internal/platform"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,7 +87,7 @@ func TestIdentityFlagRejectsSomethingThatIsNotAKey(t *testing.T) {
 	v := newTestVault(t)
 
 	notAKey := filepath.Join(t.TempDir(), "notes.txt")
-	if err := os.WriteFile(notAKey, []byte("this is not a key\n"), 0o600); err != nil {
+	if err := os.WriteFile(notAKey, []byte("this is not a key\n"), platform.PrivateFileMode); err != nil {
 		t.Fatal(err)
 	}
 

@@ -28,6 +28,7 @@ import (
 	"filippo.io/age"
 
 	"gatekeeper/internal/envelope"
+	"gatekeeper/internal/platform"
 	"gatekeeper/internal/runner"
 	"gatekeeper/internal/vault"
 )
@@ -132,7 +133,7 @@ func TestVerticalSpike(t *testing.T) {
 		t.Fatalf("stored profile is not an age file; first line: %q", firstLine(raw))
 	}
 
-	if perm := fileMode(t, path); perm != 0o600 {
+	if perm := fileMode(t, path); perm != platform.PrivateFileMode {
 		t.Errorf("profile permissions = %04o, want 0600", perm)
 	}
 

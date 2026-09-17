@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"gatekeeper/internal/identity"
+	"gatekeeper/internal/platform"
 )
 
 // TestUseVaultIsTheSecondMachineStep covers the gap that simulating a second
@@ -61,10 +62,10 @@ func TestUseVaultIsTheSecondMachineStep(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(identitiesDir, 0o700); err != nil {
+	if err := os.MkdirAll(identitiesDir, platform.PrivateDirMode); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(identitiesDir, filepath.Base(aIdentity)), aIdentityBytes, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(identitiesDir, filepath.Base(aIdentity)), aIdentityBytes, platform.PrivateFileMode); err != nil {
 		t.Fatal(err)
 	}
 

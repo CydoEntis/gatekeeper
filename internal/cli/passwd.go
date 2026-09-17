@@ -39,7 +39,7 @@ func newPasswdCmd() *cobra.Command {
 			stderr := cmd.ErrOrStderr()
 
 			// Refuse early rather than prompting for two passphrases first.
-			if usingRecoveryKey, err := cmd.Flags().GetString("identity"); err == nil && usingRecoveryKey != "" {
+			if usingRecoveryKey, err := cmd.Flags().GetString(flagIdentity); err == nil && usingRecoveryKey != "" {
 				return fmt.Errorf(
 					"%w: the recovery key has no passphrase to change — it is stored raw so "+
 						"that it works from paper. Change the passphrase on the identity this "+
@@ -97,10 +97,9 @@ func newPasswdCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&passphraseFile, "passphrase-file", "",
-		"read the current passphrase from this 0600 file instead of prompting")
-	cmd.Flags().StringVar(&newPassphraseFile, "new-passphrase-file", "",
-		"read the new passphrase from this 0600 file instead of prompting")
+	addPassphraseFlag(cmd, &passphraseFile)
+	cmd.Flags().StringVar(&newPassphraseFile, flagNewPassphraseFile, "",
+		helpNewPassphraseFile)
 
 	return cmd
 }

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"gatekeeper/internal/platform"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,10 +41,10 @@ func runWithStdin(t *testing.T, input string, args ...string) (int, string, stri
 func writeDotenv(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), ".env.local")
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(content), platform.PrivateFileMode); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(path, 0o600); err != nil {
+	if err := os.Chmod(path, platform.PrivateFileMode); err != nil {
 		t.Fatal(err)
 	}
 	return path
@@ -263,7 +264,7 @@ func TestExportWritesRestrictiveFileAndWarns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("exported file missing: %v", err)
 	}
-	if perm := fi.Mode().Perm(); perm != 0o600 {
+	if perm := fi.Mode().Perm(); perm != platform.PrivateFileMode {
 		t.Errorf("exported file permissions = %04o, want 0600", perm)
 	}
 

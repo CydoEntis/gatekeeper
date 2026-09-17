@@ -81,8 +81,7 @@ func newListCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&passphraseFile, "passphrase-file", "",
-		"read the passphrase from this 0600 file instead of prompting")
+	addPassphraseFlag(cmd, &passphraseFile)
 
 	return cmd
 }

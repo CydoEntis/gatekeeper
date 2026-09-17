@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"gatekeeper/internal/platform"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -39,7 +40,7 @@ func passphraseFileWith(t *testing.T, passphrase string, perm os.FileMode) strin
 
 func passphraseFile(t *testing.T) string {
 	t.Helper()
-	return passphraseFileWith(t, testPassphrase, 0o600)
+	return passphraseFileWith(t, testPassphrase, platform.PrivateFileMode)
 }
 
 // withNonTerminalStdin detaches standard input from the terminal so a test that
@@ -168,7 +169,7 @@ func TestShortPassphraseWarnsButProceeds(t *testing.T) {
 		"init",
 		"--vault", filepath.Join(base, "vault"),
 		"--recovery-out", filepath.Join(base, "recovery.key"),
-		"--passphrase-file", passphraseFileWith(t, "fourteenchars!", 0o600),
+		"--passphrase-file", passphraseFileWith(t, "fourteenchars!", platform.PrivateFileMode),
 	}, &stdout, &stderr)
 
 	if code != ExitOK {

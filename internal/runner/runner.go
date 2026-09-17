@@ -15,6 +15,16 @@ import (
 	"strings"
 )
 
+// How a Windows batch shim is started.
+//
+// CreateProcess cannot launch a .cmd file, so cmd.exe is the only way to run one.
+// Named because it is the one place in this package that deliberately involves a
+// shell, and that should be visible rather than buried in a slice literal.
+const (
+	windowsShell       = "cmd.exe"
+	windowsShellSwitch = "/c"
+)
+
 // ErrExecutableNotFound reports that the named command could not be found.
 //
 // Typed so the command layer can report it as an external failure with its own
@@ -146,7 +156,7 @@ func isShellShim(path string) bool {
 // decision is testable from any platform.
 func launchArgv(goos, path string, args []string) (argv []string, usedShell bool) {
 	if goos == "windows" && isShellShim(path) {
-		return append([]string{"cmd.exe", "/c", path}, args...), true
+		return append([]string{windowsShell, windowsShellSwitch, path}, args...), true
 	}
 	return append([]string{path}, args...), false
 }

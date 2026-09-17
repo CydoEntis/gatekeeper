@@ -75,12 +75,12 @@ func readPassphraseFile(path string) (string, error) {
 	if err := platform.CheckSecretFilePerms(path); err != nil {
 		return "", err
 	}
-	data, err := os.ReadFile(path)
+	contents, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("read passphrase file: %w", err)
 	}
 	// A trailing newline from an editor or `echo` is not part of the passphrase.
-	return strings.TrimRight(string(data), "\r\n"), nil
+	return strings.TrimRight(string(contents), "\r\n"), nil
 }
 
 // obtainPassphrase resolves the passphrase from a file when one is named, and
@@ -121,7 +121,7 @@ func obtainPassphrase(w io.Writer, file string, confirm bool) (string, error) {
 //
 // The caller fills in Dir afterwards.
 func resolveUnlock(cmd *cobra.Command, passphraseFile string, confirm bool) (app.VaultRef, error) {
-	identityPath, err := cmd.Flags().GetString("identity")
+	identityPath, err := cmd.Flags().GetString(flagIdentity)
 	if err != nil {
 		return app.VaultRef{}, err
 	}

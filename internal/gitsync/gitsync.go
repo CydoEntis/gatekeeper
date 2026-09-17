@@ -16,6 +16,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"gatekeeper/internal/vault"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -142,10 +143,10 @@ func profileNames(status []string) []string {
 			continue
 		}
 		base := filepath.Base(fields[len(fields)-1])
-		if !strings.HasSuffix(base, ".age") {
+		if !strings.HasSuffix(base, vault.ProfileFileExt) {
 			continue
 		}
-		name := strings.TrimSuffix(base, ".age")
+		name := strings.TrimSuffix(base, vault.ProfileFileExt)
 		if !seen[name] {
 			seen[name] = true
 			names = append(names, name)

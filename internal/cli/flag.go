@@ -56,10 +56,9 @@ func newFlagCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&passphraseFile, "passphrase-file", "",
-		"read the passphrase from this 0600 file instead of prompting")
-	cmd.Flags().StringVar(&note, "note", "",
-		"why it is flagged, for example \"pasted into a chat\"")
+	addPassphraseFlag(cmd, &passphraseFile)
+	cmd.Flags().StringVar(&note, flagNote, "",
+		helpNote)
 
 	return cmd
 }
@@ -100,8 +99,7 @@ func newUnflagCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&passphraseFile, "passphrase-file", "",
-		"read the passphrase from this 0600 file instead of prompting")
+	addPassphraseFlag(cmd, &passphraseFile)
 
 	return cmd
 }
@@ -120,6 +118,11 @@ func resolveUnlockAndDir(cmd *cobra.Command, passphraseFile string) (app.VaultRe
 	return unlock, dir, nil
 }
 
+// flagDateLayout is how a flag's date is rendered: an unambiguous, sortable form,
+// deliberately not the user's locale, because this appears in a listing meant to
+// be read and diffed rather than admired.
+const flagDateLayout = "2006-01-02"
+
 // flagSuffix renders a flag for `gk list`, in plain text rather than a symbol so
 // it reads the same on every terminal.
 func flagSuffix(flag vault.Flag) string {
@@ -128,7 +131,7 @@ func flagSuffix(flag vault.Flag) string {
 		out += ": " + flag.Note
 	}
 	if !flag.At.IsZero() {
-		out += " (" + flag.At.Format("2006-01-02") + ")"
+		out += " (" + flag.At.Format(flagDateLayout) + ")"
 	}
 	return out + "]"
 }
