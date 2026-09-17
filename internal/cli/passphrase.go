@@ -37,7 +37,7 @@ import (
 //
 // Prompts are written to w -- the command's standard error -- so standard output
 // stays clean enough to pipe, and so tests can capture them.
-func promptPassphrase(w io.Writer, confirm bool) (string, error) {
+func promptPassphrase(w io.Writer, label string, confirm bool) (string, error) {
 	if !isTerminal(os.Stdin) {
 		return "", fmt.Errorf(
 			"%w: standard input is not a terminal, so the passphrase cannot be read "+
@@ -45,7 +45,7 @@ func promptPassphrase(w io.Writer, confirm bool) (string, error) {
 			app.ErrUsage)
 	}
 
-	fmt.Fprint(w, "Passphrase: ")
+	fmt.Fprintf(w, "%s: ", label)
 	first, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Fprintln(w)
 	if err != nil {
@@ -55,7 +55,7 @@ func promptPassphrase(w io.Writer, confirm bool) (string, error) {
 		return string(first), nil
 	}
 
-	fmt.Fprint(w, "Confirm passphrase: ")
+	fmt.Fprintf(w, "Confirm %s: ", strings.ToLower(label))
 	second, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Fprintln(w)
 	if err != nil {
@@ -96,7 +96,7 @@ func obtainPassphrase(w io.Writer, file string, confirm bool) (string, error) {
 	if file != "" {
 		passphrase, err = readPassphraseFile(file)
 	} else {
-		passphrase, err = promptPassphrase(w, confirm)
+		passphrase, err = promptPassphrase(w, "Passphrase", confirm)
 	}
 	if err != nil {
 		return "", err

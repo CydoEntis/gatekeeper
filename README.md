@@ -84,21 +84,45 @@ listing and execution.
 
 ## Commands
 
-**Version one is six commands:**
-
 | Command | Purpose |
 | --- | --- |
-| `gk init` | Create a vault, a passphrase-protected identity, and an offline recovery identity |
+| `gk init --vault DIR` | Create a vault, a passphrase-protected identity, and an offline recovery identity |
+| `gk use DIR` | Point this machine at an existing vault, so nothing needs `--vault` |
+| `gk import PROFILE FILE` | Import a dotenv file — the bulk entry path |
 | `gk set PROFILE KEY` | Prompt without echo and store one value |
-| `gk list PROFILE` | List variable names, never values |
+| `gk list [PROFILE]` | Name the profiles, or the variables in one. Never values |
 | `gk run PROFILE -- COMMAND` | Run a child process with the profile injected |
-| `gk import PROFILE FILE` | Import a dotenv file into an encrypted profile |
-| `gk export PROFILE --output FILE` | Write a plaintext dotenv file after warning |
+| `gk export PROFILE --output FILE` | Write a plaintext dotenv file, after warning |
+| `gk sync` | Pull, commit locally, push — three ordinary git commands |
+| `gk flag PROFILE KEY --note` | Mark a key as exposed until you replace it |
+| `gk unflag PROFILE KEY` | Clear that mark without changing the value |
+| `gk passwd` | Change the passphrase, re-encrypting the identity in place |
+| `gk doctor` | Check the vault and identity; `--pre-commit` refuses to commit secrets |
 
-**Later, once the above is trusted in daily use:** `gk profile create`,
-`gk profile list`, `gk unset`, `gk show`, `gk passwd`, `gk doctor`, and recipient
-management (`gk device …`). These are deferred deliberately, not forgotten — see
-§11 of [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
+**Still deferred, deliberately:** `gk profile create`, `gk profile list`,
+`gk unset`, `gk show`, and recipient management (`gk device …`) — see §11 of
+[`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
+
+### Marking a key as exposed
+
+Gatekeeper cannot detect a leaked key — it has no network access, and it cannot
+know what you pasted into a chat. So you tell it, and it remembers:
+
+```sh
+gk flag website-dev OPENAI_API_KEY --note "pasted into a chat"
+gk list website-dev
+#   DATABASE_URL
+#   OPENAI_API_KEY   [flagged: pasted into a chat (2026-09-17)]
+#   STRIPE_KEY
+```
+
+Replacing the value **clears the flag by itself**, because a new value is the
+rotation. Re-entering the *same* value does not — otherwise retyping a secret
+would silence the warning without anything having been fixed. If you decide a flag
+never mattered, `gk unflag` clears it.
+
+The flag and its note live inside the encrypted payload, so they travel with the
+vault and a note like "pasted into #eng-secrets" never reaches the repository.
 
 ## How it works
 

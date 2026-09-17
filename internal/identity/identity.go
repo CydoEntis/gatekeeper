@@ -118,10 +118,6 @@ func Dir() (string, error) {
 // replace, so an interrupted save cannot leave a half-written key that would look
 // like a wrong passphrase forever after.
 func Save(id Identity, passphrase string) (string, error) {
-	if err := ValidatePassphrase(passphrase); err != nil {
-		return "", err
-	}
-
 	path, err := Path(id.VaultID)
 	if err != nil {
 		return "", err
@@ -130,6 +126,49 @@ func Save(id Identity, passphrase string) (string, error) {
 		return "", fmt.Errorf("%w: %s", ErrExists, path)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("inspect identity path: %w", err)
+	}
+	return write(id, passphrase)
+}
+
+// ChangePassphrase re-encrypts a vault's identity under a new passphrase.
+//
+// The old passphrase is required and verified, so this cannot be used to lock
+// someone out of a vault they cannot already open. The new key file is written
+// and atomically swapped in, so an interruption leaves the old passphrase
+// working rather than leaving no working passphrase at all.
+func ChangePassphrase(vaultID, oldPassphrase, newPassphrase string) (string, error) {
+	if oldPassphrase == newPassphrase {
+		return "", errors.New("the new passphrase is the same as the current one")
+	}
+
+	// Unlocking first is what makes the old passphrase authoritative rather than
+	// decorative.
+	id, err := Load(vaultID, oldPassphrase)
+	if err != nil {
+		return "", err
+	}
+	return Rewrite(id, newPassphrase)
+}
+
+// Rewrite replaces a vault's identity, encrypted under a new passphrase.
+//
+// This is how the passphrase is changed: unlock with the old one, write with the
+// new one. It is the only function that overwrites a key file, and it exists so
+// that changing a passphrase never requires deleting the key first — which would
+// leave the vault unopenable if anything went wrong in between.
+func Rewrite(id Identity, passphrase string) (string, error) {
+	return write(id, passphrase)
+}
+
+// write seals an identity and installs it atomically.
+func write(id Identity, passphrase string) (string, error) {
+	if err := ValidatePassphrase(passphrase); err != nil {
+		return "", err
+	}
+
+	path, err := Path(id.VaultID)
+	if err != nil {
+		return "", err
 	}
 
 	dir := filepath.Dir(path)

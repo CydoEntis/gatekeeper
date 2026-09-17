@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"gatekeeper/internal/guard"
 	"gatekeeper/internal/identity"
@@ -21,6 +23,9 @@ type Check struct {
 	Name   string
 	OK     bool
 	Detail string
+	// Skipped marks a check that could not run. It is neither a pass nor a
+	// failure, and reporting it as a pass would be a lie.
+	Skipped bool
 }
 
 // DoctorReport is the outcome of a diagnostic run.
@@ -29,11 +34,11 @@ type DoctorReport struct {
 	Checks   []Check
 }
 
-// Failed returns the checks that did not pass.
+// Failed returns the checks that did not pass. Skipped checks are not failures.
 func (r DoctorReport) Failed() []Check {
 	var failed []Check
 	for _, c := range r.Checks {
-		if !c.OK {
+		if !c.OK && !c.Skipped {
 			failed = append(failed, c)
 		}
 	}
@@ -42,11 +47,16 @@ func (r DoctorReport) Failed() []Check {
 
 // Doctor inspects a vault and the machine state around it.
 //
-// It deliberately does **not** require the passphrase. It checks presence,
-// permissions, and hygiene rather than decryption, so it still works in the
-// situation where you most need it: when the vault will not open and you do not
-// yet know why.
-func (a App) Doctor(ctx context.Context, vaultDir string) (DoctorReport, error) {
+// It deliberately does **not** require the passphrase. Its checks are about
+// presence, permissions and hygiene rather than decryption, so it still works in
+// the situation where you most need it: when the vault will not open and you do
+// not yet know why.
+//
+// The one check that does need the vault decrypted — flagged variables — runs
+// only when `unlock` carries a passphrase or an identity, and is reported as
+// skipped otherwise. Saying "ok" for a check that never ran would be worse than
+// having no check at all.
+func (a App) Doctor(ctx context.Context, vaultDir string, unlock VaultRef) (DoctorReport, error) {
 	if err := ctx.Err(); err != nil {
 		return DoctorReport{}, err
 	}
@@ -54,6 +64,9 @@ func (a App) Doctor(ctx context.Context, vaultDir string) (DoctorReport, error) 
 	report := DoctorReport{VaultDir: vaultDir}
 	add := func(name string, ok bool, detail string) {
 		report.Checks = append(report.Checks, Check{Name: name, OK: ok, Detail: detail})
+	}
+	addSkipped := func(name, detail string) {
+		report.Checks = append(report.Checks, Check{Name: name, Skipped: true, Detail: detail})
 	}
 
 	if vaultDir == "" {
@@ -113,5 +126,48 @@ func (a App) Doctor(ctx context.Context, vaultDir string) (DoctorReport, error) 
 		add("vault has ignore rules", true, vault.GitignoreFile+" is present")
 	}
 
+	// Flagged variables live inside the encrypted payload, so this is the one
+	// check that needs the vault opened.
+	if unlock.Passphrase == "" && unlock.Identity == "" {
+		addSkipped("no flagged variables",
+			"needs the vault unlocked; pass --passphrase-file to include it")
+		return report, nil
+	}
+
+	unlock.Dir = vaultDir
+	opened, err := a.open(unlock)
+	if err != nil {
+		add("no flagged variables", false, err.Error())
+		return report, nil
+	}
+
+	flagged, err := flaggedVariables(ctx, opened)
+	switch {
+	case err != nil:
+		add("no flagged variables", false, err.Error())
+	case len(flagged) == 0:
+		add("no flagged variables", true, "nothing marked as exposed")
+	default:
+		add("no flagged variables", false,
+			fmt.Sprintf("%d still flagged: %s", len(flagged), strings.Join(flagged, ", ")))
+	}
+
 	return report, nil
+}
+
+// flaggedVariables lists every flagged variable as "profile/KEY".
+func flaggedVariables(ctx context.Context, v *vault.FileVault) ([]string, error) {
+	summaries, err := v.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var out []string
+	for _, s := range summaries {
+		for _, name := range s.Flagged() {
+			out = append(out, s.Name+"/"+name)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }

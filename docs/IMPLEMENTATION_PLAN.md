@@ -215,6 +215,10 @@ survives unless the replacement completes.
 | `gk import PROFILE FILE` | Import a dotenv file |
 | `gk export PROFILE --output FILE` | Write a plaintext dotenv file, explicitly |
 | `gk doctor` | Check the vault, identity and permissions — and refuse to commit secrets with `--pre-commit` |
+| `gk sync` | Pull, commit, push — three ordinary git commands, and the only thing here that touches the network |
+| `gk flag PROFILE KEY` | Mark a key as exposed until its value is replaced |
+| `gk unflag PROFILE KEY` | Clear that mark without changing the value |
+| `gk passwd` | Re-encrypt the identity under a new passphrase |
 
 **`--identity PATH`** is a global flag that opens a vault with a raw age private
 key instead of the local identity. That is the recovery path — how the offline
@@ -405,11 +409,6 @@ parameter precisely so the Windows branch is testable from Linux.
   deleted.
 - The README documents the transport choices (Git, a file-sync tool, removable
   media), how to install the hook, and how to get back in with the recovery key.
-- **`gk use DIR` closes the second-machine gap.** Simulating a second machine
-  exposed it: `init` records a default vault, but `init` cannot run against a vault
-  that already exists — so a new machine had no way to stop passing `--vault` on
-  every command, and the error message pointed at a command that would refuse. The
-  gap was invisible until the two-machine flow was actually walked through.
 
 *Acceptance:* verified. A healthy vault reports every check as `ok` and exits 0; a
 removed identity is reported as a failure with a non-zero exit; a directory holding
@@ -429,6 +428,38 @@ than disabled:
 The filename check is not redundant with the content check: a Gatekeeper identity
 is passphrase-encrypted, so its bytes are opaque and the filename is the only
 signal that identifies it.
+
+### Step 7 — additions after first use ✅ **done**
+
+Four things requested once the tool was usable, all smaller than what came before.
+
+- **`gk use DIR`** — closes a second-machine gap that only appeared when the flow
+  was actually walked through. `init` records a default vault, but `init` cannot
+  run against a vault that already exists, so a new machine had no way to stop
+  passing `--vault` on every command, and the error message pointed at a command
+  that would refuse.
+- **`gk sync`** — the plan deferred this with "implement it only if repeated
+  personal use proves valuable." It did. It is a wrapper, not an engine: three
+  git commands with argument arrays, a commit message built only from profile
+  names, and a hard stop with recovery instructions when ciphertext cannot be
+  merged. It is also the **only** command that touches the network.
+- **`gk passwd`** — re-encrypts the identity under a new passphrase. The old
+  passphrase is verified first, so it cannot be used to take over a vault you
+  cannot already open, and the new key file is swapped in atomically so an
+  interruption leaves the old passphrase working rather than none.
+- **`gk flag` / `gk unflag`** — mark a key as exposed. Gatekeeper cannot *detect*
+  a leak and never will, so this is the user telling it. Replacing the value
+  clears the flag automatically; re-entering the same value does not, because
+  that would silence the warning without anything having been fixed. The flag
+  lives inside the encrypted payload, so a note like "pasted into #eng-secrets"
+  never reaches the repository.
+
+*Acceptance:* verified. `gk sync` round-trips between two real clones and stops
+on a conflict with actionable instructions; the generated commit message contains
+profile names and nothing else; `gk passwd` makes the old passphrase fail and the
+new one work, and a refused change leaves the original working; a flagged key
+shows in `list` and `doctor`, survives a reload, is encrypted at rest, and clears
+when the value changes.
 
 ---
 
@@ -492,14 +523,18 @@ Tests use distinctive canary values and scan every artifact for disclosure. Real
 credentials are never used, in any test, ever.
 
 Passphrase tests derive keys with scrypt at age's fixed work factor, and the `run`
-tests start real child processes. The suite therefore takes roughly forty-five
-seconds, and about five minutes under `-race` — the `cli` package dominates both.
+tests start real child processes. The suite therefore takes about a minute, and
+around ten minutes under `-race` — the `cli` package dominates both, because almost
+every test there opens a vault.
 
 That is expected and must not be "optimised" by weakening the KDF in tests. The
 slowness *is* the protection against an attacker who has the file, and a fast test
 suite is not worth a weak vault. Tests cannot be made parallel to claw the time
 back either, because they isolate the config directory through environment
 variables, which `t.Parallel` forbids.
+
+The practical consequence: `go test ./...` is the normal loop, and `-race` is worth
+running before a release rather than on every save.
 
 ---
 
@@ -558,7 +593,7 @@ Specifically:
 
 Not in v0.1, and not to be started earlier:
 
-device add/remove; `gk sync`; `show`; `doctor` (beyond the lite check); MCP; a web
+device add/remove; `show`; MCP; a web
 or desktop UI; a background daemon; a session cache for the passphrase; OS keychain
 integration; hardware keys; hosted accounts; team sharing; mobile; browser
 extension; automatic rotation; a plugin system; self-update.
@@ -573,8 +608,7 @@ form of arbitrary secret retrieval over a network interface.
 | Decision | Notes |
 | --- | --- |
 | **WSL or a separate Linux box** | Determines whether the Linux machine shares or duplicates the Windows identity, and how paths resolve. |
-| **`gk passwd` timing** | Trivial to implement — re-encrypt the key file — and the one loose end in the recovery story. |
-| **Vault transport** | Git or a file-sync tool. Not a code decision — neither needs adapter code. Git is installed everywhere already; a no-history sync avoids the permanence problem. |
+| **Vault transport** | `gk sync` now covers Git. A file-sync tool still works and needs no code — the vault is a directory. No further adapters are planned. |
 | **Maximum encrypted profile size** | Unbounded in v0.1; the envelope already caps plaintext at 1 MiB. |
 | **License** | Unselected. |
 

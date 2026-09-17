@@ -29,8 +29,11 @@ service, no subscription, no account.
 | `gk import` / `gk export` | **Work** — bulk entry: one command, one passphrase, every key. Export writes `0600` and warns |
 | `gk run` | **Works** — injects a profile into a child process, no shell, child's exit code passed through |
 | `gk doctor` | **Works** — checks the vault and identity without needing the passphrase; `--pre-commit` refuses to commit secrets |
+| `gk sync` | **Works** — pull, commit, push. Stops with recovery instructions when ciphertext cannot be merged |
+| `gk passwd` | **Works** — re-encrypts the identity in place; a refused change leaves the old passphrase working |
+| `gk flag` / `gk unflag` | **Works** — marks a key as exposed; replacing the value clears it |
 | Recovery | **Works end to end** — `--identity recovery.key` opens a vault with the local identity deleted |
-| Two machines | **Verified by simulation** — a vault copied to a second config directory, `gk use`, identity copied by hand, then `list` and `run` both work with no flags |
+| Two machines | **Verified over a real git clone**, both directions, with the pre-commit guard installed |
 
 All six v0.1 commands are implemented, plus `doctor` and the recovery path. **The
 v0.1 build is feature-complete** and the security-review checklist in §9 of the
@@ -42,17 +45,17 @@ plan has been run.
 
 ## What is next
 
-**v0.1 is feature-complete.** All six commands work, plus `gk doctor` and a
-verified recovery path.
+**Feature-complete, plus the three additions: `gk sync`, `gk passwd`, and key
+flags.** Twelve commands.
 
-What remains before it is genuinely done:
+What remains:
 
-1. **Use it on a second machine.** The documented per-machine flow is verified in
-   pieces but has not been done for real across two computers, and that is the
-   point of the whole tool.
-2. **Optional polish:** `gk passwd` (change the passphrase) is trivial and closes
-   the last gap in the recovery story — currently, recovering means re-importing
-   into a fresh vault.
+1. **Use it on two of your real machines.** The flow is now verified over a real
+   `git clone` in both directions, including that the pre-commit guard does not
+   block legitimate vault commits. What is still untested is a copy between two
+   actual computers over a network — the one thing that cannot be simulated here.
+2. **Per-machine keys** instead of one shared identity. Deliberately deferred for
+   v0.1; the recipient list already supports several keys, so it is additive.
 
 The Windows `.cmd` question is **settled**: a batch shim is started through
 `cmd.exe`, because that is the only way to run one, and Gatekeeper says so on

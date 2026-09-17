@@ -46,6 +46,19 @@ type Profile struct {
 	Revision  int               `json:"revision"`
 	UpdatedAt time.Time         `json:"updated_at"`
 	Variables map[string]string `json:"variables"`
+	// Flags marks variables that need attention — most often because the value
+	// was exposed and has to be replaced.
+	//
+	// It lives inside the encrypted payload rather than in plaintext metadata, so
+	// it travels with the vault and a note like "pasted into a chat" never leaks
+	// to whoever can see the repository.
+	Flags map[string]Flag `json:"flags,omitempty"`
+}
+
+// Flag is a note attached to one variable.
+type Flag struct {
+	Note string    `json:"note,omitempty"`
+	At   time.Time `json:"at"`
 }
 
 // Validate enforces every rule that must hold before a profile is encrypted.
@@ -183,6 +196,19 @@ type Summary struct {
 	Name     string
 	Revision int
 	Vars     []string
+	// Flags is copied, not aliased, so a caller cannot mutate the profile it came
+	// from by editing a summary.
+	Flags map[string]Flag
+}
+
+// Flagged returns the flagged variable names, sorted.
+func (s Summary) Flagged() []string {
+	names := make([]string, 0, len(s.Flags))
+	for name := range s.Flags {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func (p Profile) Summary() Summary {
@@ -193,5 +219,11 @@ func (p Profile) Summary() Summary {
 	// Sorted, because a map has no order and `gk list` output that reshuffles
 	// between runs is untrustworthy to read and impossible to diff.
 	sort.Strings(names)
-	return Summary{Name: p.Name, Revision: p.Revision, Vars: names}
+
+	flags := make(map[string]Flag, len(p.Flags))
+	for name, flag := range p.Flags {
+		flags[name] = flag
+	}
+
+	return Summary{Name: p.Name, Revision: p.Revision, Vars: names, Flags: flags}
 }

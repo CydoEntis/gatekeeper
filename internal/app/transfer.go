@@ -111,6 +111,11 @@ func (a App) Import(ctx context.Context, ref VaultRef, req ImportRequest) (Impor
 	} else {
 		summary, err = v.Change(ctx, req.Profile, func(p *vault.Profile) error {
 			for key, value := range incoming {
+				// Same rule as `set`: a value that actually changed is the
+				// rotation, and clears any flag on that key.
+				if current, ok := p.Variables[key]; !ok || current != value {
+					delete(p.Flags, key)
+				}
 				p.Variables[key] = value
 			}
 			return nil

@@ -51,8 +51,12 @@ func newListCmd() *cobra.Command {
 					return nil
 				}
 				for _, s := range summaries {
-					fmt.Fprintf(out, "%s\t%d variable(s)\trevision %d\n",
-						s.Name, len(s.Vars), s.Revision)
+					flagged := ""
+					if n := len(s.Flags); n > 0 {
+						flagged = fmt.Sprintf("\t%d flagged", n)
+					}
+					fmt.Fprintf(out, "%s\t%d variable(s)\trevision %d%s\n",
+						s.Name, len(s.Vars), s.Revision, flagged)
 				}
 				return nil
 			}
@@ -67,6 +71,10 @@ func newListCmd() *cobra.Command {
 			}
 			// Names only. There is nowhere in this loop a value could come from.
 			for _, name := range summary.Vars {
+				if flag, ok := summary.Flags[name]; ok {
+					fmt.Fprintf(out, "%s\t%s\n", name, flagSuffix(flag))
+					continue
+				}
 				fmt.Fprintln(out, name)
 			}
 			return nil

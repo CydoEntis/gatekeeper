@@ -150,6 +150,13 @@ func (a App) Set(ctx context.Context, ref VaultRef, req SetRequest) (ChangeResul
 		summary, err = v.Create(ctx, req.Profile, map[string]string{req.Key: req.Value})
 	} else {
 		summary, err = v.Change(ctx, req.Profile, func(p *vault.Profile) error {
+			// A genuinely new value *is* the rotation, so the flag clears itself.
+			// Re-entering the same value is not a rotation, and the flag stays —
+			// otherwise typing the same secret again would silently clear the
+			// warning without anything having been fixed.
+			if current, ok := p.Variables[req.Key]; !ok || current != req.Value {
+				delete(p.Flags, req.Key)
+			}
 			p.Variables[req.Key] = req.Value
 			return nil
 		})
@@ -164,6 +171,80 @@ func (a App) Set(ctx context.Context, ref VaultRef, req SetRequest) (ChangeResul
 		Variables: summary.Vars,
 		Created:   created,
 	}, nil
+}
+
+// FlagRequest marks one variable as needing attention.
+type FlagRequest struct {
+	Profile string
+	Key     string
+	Note    string
+}
+
+// Flag records that a variable needs attention — most often that its value was
+// exposed — so that it keeps showing up in `list` until the value is replaced.
+//
+// Gatekeeper cannot detect an exposed key. It has no network access and never
+// will: it does not watch repositories, does not check whether a key still works,
+// and cannot know what you pasted into a chat. So this is you telling it, and the
+// value is that three months later the one key that leaked is not the one nobody
+// remembers.
+//
+// Replacing the value clears the flag, because a new value is the rotation.
+func (a App) Flag(ctx context.Context, ref VaultRef, req FlagRequest) (vault.Summary, error) {
+	if err := ctx.Err(); err != nil {
+		return vault.Summary{}, err
+	}
+	if !vault.ValidProfileName(req.Profile) {
+		return vault.Summary{}, fmt.Errorf("%w: profile name %q", vault.ErrInvalidName, req.Profile)
+	}
+	if !vault.ValidVariableName(req.Key) {
+		return vault.Summary{}, fmt.Errorf("%w: variable name %q", vault.ErrInvalidName, req.Key)
+	}
+
+	v, err := a.open(ref)
+	if err != nil {
+		return vault.Summary{}, err
+	}
+
+	return v.Change(ctx, req.Profile, func(p *vault.Profile) error {
+		if _, ok := p.Variables[req.Key]; !ok {
+			return fmt.Errorf("%w: %s has no variable called %s", vault.ErrNotFound, req.Profile, req.Key)
+		}
+		if p.Flags == nil {
+			p.Flags = map[string]vault.Flag{}
+		}
+		p.Flags[req.Key] = vault.Flag{Note: req.Note, At: a.Now().UTC()}
+		return nil
+	})
+}
+
+// Unflag clears a flag without changing the value.
+//
+// Both exist because "I rotated it" and "I decided it never mattered" are
+// different answers, and only the first one is a new value.
+func (a App) Unflag(ctx context.Context, ref VaultRef, profile, key string) (vault.Summary, error) {
+	if err := ctx.Err(); err != nil {
+		return vault.Summary{}, err
+	}
+	if !vault.ValidProfileName(profile) {
+		return vault.Summary{}, fmt.Errorf("%w: profile name %q", vault.ErrInvalidName, profile)
+	}
+	if !vault.ValidVariableName(key) {
+		return vault.Summary{}, fmt.Errorf("%w: variable name %q", vault.ErrInvalidName, key)
+	}
+
+	v, err := a.open(ref)
+	if err != nil {
+		return vault.Summary{}, err
+	}
+
+	return v.Change(ctx, profile, func(p *vault.Profile) error {
+		if _, ok := p.Flags[key]; !ok {
+			return fmt.Errorf("%w: %s is not flagged in %s", vault.ErrNotFound, key, profile)
+		}
+		delete(p.Flags, key)
+		return nil
+	})
 }
 
 // Profiles names every profile in the vault.

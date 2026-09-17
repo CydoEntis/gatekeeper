@@ -7,12 +7,14 @@ import (
 
 	"gatekeeper/internal/app"
 	"gatekeeper/internal/guard"
+	"gatekeeper/internal/identity"
 )
 
 func newDoctorCmd() *cobra.Command {
 	var (
-		preCommit bool
-		path      string
+		preCommit      bool
+		path           string
+		passphraseFile string
 	)
 
 	cmd := &cobra.Command{
@@ -47,6 +49,8 @@ func newDoctorCmd() *cobra.Command {
 		"scan a directory for secrets that must not be committed")
 	cmd.Flags().StringVar(&path, "path", ".",
 		"directory to scan with --pre-commit")
+	cmd.Flags().StringVar(&passphraseFile, "passphrase-file", "",
+		"unlock the vault to include the flagged-variable check; optional, because doctor never prompts")
 
 	return cmd
 }
@@ -60,7 +64,14 @@ func runDoctor(cmd *cobra.Command) error {
 		dir = ""
 	}
 
-	report, err := app.New().Doctor(cmd.Context(), dir)
+	// Doctor never prompts. If a way in was supplied explicitly, the
+	// flagged-variable check runs; otherwise it reports itself as skipped.
+	unlock, err := optionalUnlock(cmd)
+	if err != nil {
+		return err
+	}
+
+	report, err := app.New().Doctor(cmd.Context(), dir, unlock)
 	if err != nil {
 		return err
 	}
@@ -68,7 +79,10 @@ func runDoctor(cmd *cobra.Command) error {
 	out := cmd.OutOrStdout()
 	for _, c := range report.Checks {
 		mark := "ok  "
-		if !c.OK {
+		switch {
+		case c.Skipped:
+			mark = "skip"
+		case !c.OK:
 			mark = "FAIL"
 		}
 		fmt.Fprintf(out, "  %s  %-28s %s\n", mark, c.Name, c.Detail)
@@ -80,6 +94,40 @@ func runDoctor(cmd *cobra.Command) error {
 	}
 	fmt.Fprintln(out, "\nEverything checks out.")
 	return nil
+}
+
+// optionalUnlock resolves a way into the vault only when one was supplied
+// explicitly.
+//
+// It never prompts, which is what keeps `gk doctor` usable on a vault that will
+// not open. Returning an empty ref means "checks that need the vault decrypted
+// will be skipped", not "no vault".
+func optionalUnlock(cmd *cobra.Command) (app.VaultRef, error) {
+	identityPath, err := cmd.Flags().GetString("identity")
+	if err != nil {
+		return app.VaultRef{}, err
+	}
+	if identityPath != "" {
+		private, err := identity.ReadRawPrivateKey(identityPath)
+		if err != nil {
+			return app.VaultRef{}, err
+		}
+		return app.VaultRef{Identity: private}, nil
+	}
+
+	passphraseFile, err := cmd.Flags().GetString("passphrase-file")
+	if err != nil {
+		return app.VaultRef{}, err
+	}
+	if passphraseFile == "" {
+		return app.VaultRef{}, nil
+	}
+
+	passphrase, err := readPassphraseFile(passphraseFile)
+	if err != nil {
+		return app.VaultRef{}, err
+	}
+	return app.VaultRef{Passphrase: passphrase}, nil
 }
 
 // runPreCommitCheck refuses a commit that contains secrets.

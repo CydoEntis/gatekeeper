@@ -19,6 +19,7 @@ import (
 
 	"gatekeeper/internal/app"
 	"gatekeeper/internal/envelope"
+	"gatekeeper/internal/gitsync"
 	"gatekeeper/internal/guard"
 	"gatekeeper/internal/identity"
 	"gatekeeper/internal/localconfig"
@@ -68,7 +69,8 @@ func ExitCode(err error) int {
 		return ExitLocked
 
 	case errors.Is(err, vault.ErrConflict),
-		errors.Is(err, app.ErrCollision):
+		errors.Is(err, app.ErrCollision),
+		errors.Is(err, gitsync.ErrMergeConflict):
 		return ExitConflict
 
 	case errors.Is(err, vault.ErrUnsupportedFormat),
@@ -86,7 +88,9 @@ func ExitCode(err error) int {
 
 	// A command that could not be started is an environment problem, not a
 	// Gatekeeper problem.
-	case errors.Is(err, runner.ErrExecutableNotFound):
+	case errors.Is(err, runner.ErrExecutableNotFound),
+		errors.Is(err, gitsync.ErrNotARepository),
+		errors.Is(err, gitsync.ErrGitMissing):
 		return ExitExternal
 
 	default:
@@ -180,7 +184,11 @@ func newRootCmd() *cobra.Command {
 		newImportCmd(),
 		newExportCmd(),
 		newRunCmd(),
+		newSyncCmd(),
+		newFlagCmd(),
+		newUnflagCmd(),
 		newDoctorCmd(),
+		newPasswdCmd(),
 	)
 	return root
 }
