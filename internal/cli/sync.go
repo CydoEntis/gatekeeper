@@ -17,8 +17,11 @@ func newSyncCmd() *cobra.Command {
 		Short: "Pull the vault, save local changes, and push",
 		Long: "Move the vault through its Git remote.\n\n" +
 			"This is three ordinary git commands run in the vault directory, in order:\n" +
-			"`git pull`, then `git add -A` with a commit if anything changed, then\n" +
-			"`git push`.\n\n" +
+			"`git pull`, then `git add` for the vault's own changed files with a commit\n" +
+			"if anything changed, then `git push`.\n\n" +
+			"Staging is limited to the paths the vault owns, so it is not `git add -A`:\n" +
+			"anything else you happen to keep in that directory is left alone rather than\n" +
+			"swept into a commit.\n\n" +
 			"It is a convenience, not an engine. There is no background behaviour, and\n" +
 			"this is the only command in Gatekeeper that touches the network — and only\n" +
 			"when you run it. Nothing else, including `set` and `run`, ever does.\n\n" +
