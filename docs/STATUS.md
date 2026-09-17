@@ -41,7 +41,7 @@ plan has been run.
 | End-to-end path | Covered by the `app` and `cli` tests — vault → age encryption → safe persistence → decryption → child environment, including a scan for disclosure |
 | Tests | `go test -race ./...` green across all packages |
 | Builds | Windows, macOS and Linux all compile and vet clean |
-| Git | Repository initialised, on branch `refactor/code-standards`; nothing pushed |
+| Git | Work is on `dev` and merged to `main`; no remote configured, so nothing is pushed |
 
 ## What is next
 
