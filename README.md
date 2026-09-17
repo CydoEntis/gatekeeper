@@ -141,23 +141,36 @@ considered later if it proves useful.
 
 ## Moving to another computer
 
-Version one uses **one identity shared by all of your machines**, so there is no
-device-approval dance. Two things move:
+**There is no sync feature, and nothing to configure inside Gatekeeper.** The
+vault is a directory. Whatever you already use to copy a directory — Git,
+Syncthing, `scp`, a USB stick — *is* the sync. Only ciphertext travels, so the
+transport is not a security decision and Gatekeeper is not in the loop.
 
-1. Copy the encrypted vault directory.
-2. Copy the identity file once, by hand, to the same path on the new machine:
-   `~/.config/gatekeeper/identities/<vault-id>.key` (on Windows,
-   `%LOCALAPPDATA%\gatekeeper\identities\`).
+On the new machine:
 
-Then `gk` prompts for the passphrase and works. After that first copy, every new
-secret arrives with the encrypted directory — nothing else is ever carried by
-hand.
+```sh
+# 1. Get the vault directory there, however you like
+git clone <your repository> ~/gatekeeper-vault
+
+# 2. Point Gatekeeper at it, once, so no command needs --vault
+gk use ~/gatekeeper-vault
+
+# 3. Copy the identity file across by hand, once:
+#      from  <old machine>/.config/gatekeeper/identities/<vault-id>.key
+#      to    ~/.config/gatekeeper/identities/<vault-id>.key
+#    (Windows: %LOCALAPPDATA%\gatekeeper\identities\)
+
+# 4. That is the whole setup
+gk list
+gk run website-dev -- npm run dev
+```
+
+Step 3 is the only thing that never travels through Git or any sync tool, and it
+happens once per machine. After that, every new secret arrives with the directory.
+(`gk init` records the default vault for you, so step 2 is only needed on a machine
+that did not create the vault.)
 
 ### Choosing a transport
-
-**Gatekeeper has no sync code, and does not need any.** The vault is a directory;
-whatever you already use to move a directory will do, and only ciphertext ever
-travels.
 
 | Transport | Notes |
 | --- | --- |

@@ -208,6 +208,7 @@ survives unless the replacement completes.
 | Command | Purpose |
 | --- | --- |
 | `gk init` | Create a vault, a device identity, a recovery identity, and set the passphrase |
+| `gk use DIR` | Point this machine at an existing vault, so no command needs `--vault` |
 | `gk set PROFILE KEY` | Prompt without echo and store one value; **creates the profile if it does not exist** |
 | `gk list [PROFILE]` | With no argument, name the profiles; with a profile, name its variables. Never values |
 | `gk run PROFILE -- CMD` | Run a child process with the profile injected |
@@ -404,6 +405,11 @@ parameter precisely so the Windows branch is testable from Linux.
   deleted.
 - The README documents the transport choices (Git, a file-sync tool, removable
   media), how to install the hook, and how to get back in with the recovery key.
+- **`gk use DIR` closes the second-machine gap.** Simulating a second machine
+  exposed it: `init` records a default vault, but `init` cannot run against a vault
+  that already exists — so a new machine had no way to stop passing `--vault` on
+  every command, and the error message pointed at a command that would refuse. The
+  gap was invisible until the two-machine flow was actually walked through.
 
 *Acceptance:* verified. A healthy vault reports every check as `ok` and exits 0; a
 removed identity is reported as a failure with a non-zero exit; a directory holding

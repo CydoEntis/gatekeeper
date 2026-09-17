@@ -4,10 +4,51 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 
 	"gatekeeper/internal/identity"
+	"gatekeeper/internal/localconfig"
 	"gatekeeper/internal/vault"
 )
+
+// UseVault records dir as this machine's default vault.
+//
+// This is the missing half of moving to a second machine. `init` records a
+// default, but init cannot run against a vault that already exists — so before
+// this existed, a new machine had no way to stop passing --vault on every single
+// command, and the error message pointed at init, which would refuse.
+//
+// The directory is verified to be a real vault first, so a typo cannot silently
+// become the default.
+func (a App) UseVault(ctx context.Context, dir string) (vault.Manifest, error) {
+	if err := ctx.Err(); err != nil {
+		return vault.Manifest{}, err
+	}
+	if dir == "" {
+		return vault.Manifest{}, fmt.Errorf("%w: no vault directory given", ErrUsage)
+	}
+
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return vault.Manifest{}, fmt.Errorf("%w: %v", ErrUsage, err)
+	}
+
+	manifest, err := vault.ReadManifest(abs)
+	if err != nil {
+		return vault.Manifest{}, err
+	}
+
+	cfg, err := localconfig.Load()
+	if err != nil {
+		return vault.Manifest{}, err
+	}
+	cfg.DefaultVault = abs
+	if err := localconfig.Save(cfg); err != nil {
+		return vault.Manifest{}, err
+	}
+
+	return manifest, nil
+}
 
 // VaultRef identifies a vault and how to unlock it.
 //

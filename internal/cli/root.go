@@ -174,6 +174,7 @@ func newRootCmd() *cobra.Command {
 
 	root.AddCommand(
 		newInitCmd(),
+		newUseCmd(),
 		newSetCmd(),
 		newListCmd(),
 		newImportCmd(),
@@ -211,7 +212,7 @@ func resolveVaultDir(cmd *cobra.Command) (string, error) {
 
 	return "", fmt.Errorf(
 		"%w: no vault selected. Pass --vault DIR, set GK_VAULT, or run "+
-			"`gk init --vault DIR` to record a default", app.ErrUsage)
+			"`gk use DIR` to record a default for this machine", app.ErrUsage)
 }
 
 // isTerminal reports whether f is an interactive terminal.

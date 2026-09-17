@@ -30,6 +30,7 @@ service, no subscription, no account.
 | `gk run` | **Works** — injects a profile into a child process, no shell, child's exit code passed through |
 | `gk doctor` | **Works** — checks the vault and identity without needing the passphrase; `--pre-commit` refuses to commit secrets |
 | Recovery | **Works end to end** — `--identity recovery.key` opens a vault with the local identity deleted |
+| Two machines | **Verified by simulation** — a vault copied to a second config directory, `gk use`, identity copied by hand, then `list` and `run` both work with no flags |
 
 All six v0.1 commands are implemented, plus `doctor` and the recovery path. **The
 v0.1 build is feature-complete** and the security-review checklist in §9 of the
